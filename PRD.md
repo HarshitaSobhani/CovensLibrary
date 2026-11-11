@@ -1,806 +1,236 @@
-# Coven Library --- Product Requirements Document
+# Coven's Library — Product Requirements Document
 
-**Version:** 1.0\
-**Status:** Draft for implementation\
-**Product type:** Private, owner-facing library management web
-application\
-**Primary operator:** One library owner\
-**Initial scale:** Up to 50 members and approximately 200 catalogue
-entries\
-**Development workflow:** Claude Code\
-**Initial deployment direction:** Local application accessed through the
-Dell laptop's browser; cloud migration may be considered later.
+**Version:** 2.0 (reconciled with the owner's confirmed decisions)
+**Status:** Specification; no implementation exists
+**Product type:** Private, owner-operated library management web application
+**Primary operator:** One library owner
+**Scale:** Up to ~50 members; ~200 catalogue editions at launch (physical copies tracked separately)
+**Runtime:** Dell laptop, Windows 11, accessed through its browser on localhost
+**Development:** MacBook M3, macOS (separate environment)
 
-------------------------------------------------------------------------
+Decision identifiers (A1, B1…, N1…) refer to the register in `OPEN_QUESTIONS.md`, which is authoritative if this document and the register ever differ.
+
+---
 
 ## 1. Executive summary
 
-Coven Library is a private web application used only by the library
-owner to manage a physical lending library. Members do not receive
-application accounts and cannot access the system. The owner creates and
-maintains member records, manages the catalogue and individual physical
-copies, records subscriptions and payments, issues and receives books,
-handles renewals, tracks refundable security tokens, and reviews
-operational and financial reports.
-
-The first release is intended for a small operation: no more than 50
-members and approximately 200 books at launch. The system should be
-simple to operate, reliable, auditable, and designed so that a later
-move from local hosting to cloud hosting does not require a rewrite.
-
-The initial application is online-dependent. Offline operation is
-explicitly out of scope.
+Coven's Library is a private web application used only by the library owner to manage a physical lending library. Members have no accounts and cannot access the system. The owner maintains members, the catalogue and individual physical copies, records subscriptions and payments, issues and receives books, records renewals, manages the refundable ₹500 token, sends reminders, and reviews reports. It must be simple, reliable and auditable, and portable to cloud hosting later. It runs locally first and needs internet only for email, Google Drive backup and similar services; offline operation is not a goal.
 
 ## 2. Goals
-
-1.  Maintain one reliable source of truth for members, subscriptions,
-    books, copies, loans, payments, and token balances.
-2.  Make common owner workflows fast: register a member, record payment,
-    issue a book, process a return, and renew a membership or loan.
-3.  Prevent invalid operations through business-rule validation rather
-    than relying on the owner to remember every rule.
-4.  Preserve historical records for financial and operational
-    accountability.
-5.  Provide useful dashboard reminders, reports, exports, receipts, and
-    daily encrypted backups.
-6.  Use a lightweight architecture appropriate for the library's scale
-    and the Dell's 8 GB RAM / 256 GB storage runtime environment.
+1. One reliable source of truth for members, subscriptions, books, copies, loans, payments and token balances.
+2. Fast owner workflows: register a member, record payment, issue, return, renew.
+3. Prevent invalid operations through server-side rules, not owner memory.
+4. Preserve financial and operational history.
+5. Useful dashboard, reports, exports, receipts, automatic email and encrypted daily backups with replacement-computer recovery.
+6. Lightweight architecture suitable for an 8 GB RAM / 256 GB Dell.
 
 ## 3. Non-goals
+Member login/portal/registration; multiple branches or tenants; online payment gateway; WhatsApp Business API or any automatic WhatsApp sending; reservations; delivery workflows; mobile apps; recommendations, ratings, wishlists; offline operation; staff accounts or roles; LAN access. Members request renewals by phone/text/WhatsApp/email; the owner records them.
 
-The MVP will not include: - Member login, member portal, public
-catalogue, public registration, or member self-service. - Multiple
-branches or multi-tenant support. - Online payment gateway
-integration. - WhatsApp Business API automation. - Member-initiated
-in-app reservations or a reservation queue. - Delivery/shipping
-workflows. - Mobile applications. - AI recommendations, ratings,
-reviews, wishlists, or social features. - Offline application
-operation. - Staff accounts or role management.
+## 4. Access and security
 
-Members may contact the owner by phone, text, WhatsApp, or email to
-request a book-loan renewal. The owner records the renewal in the
-application.
-
-## 4. Users, access, and security boundary
-
-### 4.1 User roles
-
--   **Owner:** The only authenticated application user; full access to
-    all application modules and settings.
-
-No member accounts or staff accounts are required.
+### 4.1 Role
+Owner: the only authenticated user, full access.
 
 ### 4.2 Authentication
-
--   Private login page.
--   Secure password hashing using Django's authentication system.
--   Session-based authentication.
--   Logout.
--   Re-authentication after a configurable period of inactivity.
--   Login activity log, including timestamp and outcome where practical.
--   Protect every application view and action behind authentication,
-    except login and required static assets.
--   Do not expose member, book, payment, or report data publicly.
+- Private login; Django password hashing; session authentication; logout.
+- The owner authenticates at least once each day. Sessions expire at the end of the day (Asia/Kolkata). **There is no limit on logins per day**: logging out, or a lost or expired session, never prevents another login.
+- **Failed-login protection:** every failed login is audit-logged. After **5 failed attempts within 15 minutes**, further attempts are rate-limited until the 15-minute window expires; a successful login resets the counter. **There is no account lockout.**
+- **Password recovery:** email-based reset; if SMTP is unavailable, local command-line recovery using a recovery code that is single-use, stored hashed, displayed once, and expires after 15 minutes.
+- Every view is protected except login and required static files. No public data.
 
 ### 4.3 Security requirements
+CSRF protection, secure sessions, input validation, output escaping, ORM parameterisation; secrets only in environment variables or Windows Credential Manager; restricted upload type and size; validated imports; auditable financial and membership operations; no passwords, secrets or unnecessary personal data in logs; bind to `127.0.0.1` only.
 
--   CSRF protection, secure session configuration, input validation,
-    output escaping, and ORM parameterization.
--   Secrets and credentials must be supplied through environment
-    variables, never committed.
--   Restrict uploaded files by type and size.
--   Validate imported spreadsheets before committing records.
--   Financial and membership operations must be auditable.
--   Do not log passwords, secrets, or unnecessary personal data.
+## 5. Confirmed business facts
 
-## 5. Product assumptions and confirmed business facts
-
-  -----------------------------------------------------------------------
-  Area                                Confirmed requirement
-  ----------------------------------- -----------------------------------
-  Access                              Owner only
-
-  Platform                            Web application
-
-  Physical library                    Yes
-
-  Initial members                     Maximum 50
-
-  Initial catalogue                   Approximately 200 books
-
-  Book ownership                      Coven-owned books plus donated
-                                      books; donated books become Coven
-                                      property
-
-  Member registration                 Owner enters details
-
-  Member identity                     Permanent unique membership ID
-
-  Member phone                        Mandatory and unique
-
-  Member records                      Individual memberships, no family
-                                      accounts
-
-  Member profile                      Name, mobile, email, joining date,
-                                      notes
-
-  Subscription plans                  ₹800 / 6 months; ₹1,500 / 12 months
-
-  Free tier                           None
-
-  Benefits                            Same borrowing benefits for both
-                                      plans
-
-  Subscription auto-renewal           No
-
-  Membership changes                  No upgrade/downgrade workflow;
-                                      owner selects a plan for a new
-                                      subscription
-
-  Refundable token                    ₹500, mandatory, collected once per
-                                      member
-
-  Borrowing limit                     One active book per member
-
-  Borrowing duration                  30 days
-
-  Renewals                            Unlimited, owner-recorded; each
-                                      renewal adds 30 days
-
-  Reservations                        No reservation system
-
-  Payments                            Cash and UPI; manually recorded
-
-  Split payments                      Supported; multiple payment entries
-                                      against one obligation and one
-                                      receipt
-
-  Receipt                             PDF download and print
-
-  Communication                       Email and WhatsApp message
-                                      generation; owner sends
-
-  Reminders                           Dashboard is sufficient; no daily
-                                      email summary
-
-  Dashboard                           Libly Space-inspired; light and
-                                      dark themes; rearrangeable widgets
-
-  Reports                             Advanced reports, date filters,
-                                      CSV/Excel/PDF exports
-
-  Backups                             Daily encrypted backups to Google
-                                      Drive; retain 30 daily and 12
-                                      monthly
-
-  Runtime                             Dell laptop, browser access,
-                                      library premises
-
-  Internet                            Required for application use
-
-  Import                              Excel book and copy import
-
-  Export                              Full application data export
-
-  Future hosting                      Local initially is being
-                                      considered; cloud later may be
-                                      considered
-  -----------------------------------------------------------------------
+| Area | Requirement |
+|---|---|
+| Access | Owner only; localhost only |
+| Library | One physical library |
+| Members | Up to 50; individual memberships; permanent unique member ID; mobile mandatory and unique (E.164, international, country-code picker); email optional |
+| Book ownership | Coven-owned and donated books (donated books become library property) |
+| Plans | ₹800 / 6 calendar months; ₹1,500 / 12 calendar months; same benefits; no free tier; no automatic renewal |
+| Subscription fees | **Strictly non-refundable** |
+| Token | ₹500, mandatory, refundable under the rules in §6.6 |
+| Borrowing | One active book per member; 30 days; unlimited owner-recorded renewals of 30 days |
+| Payments | Cash and UPI recorded manually; split payments |
+| Receipts | PDF and print |
+| Email | Automatic via SMTP |
+| WhatsApp | Manual: prefilled message, owner sends |
+| Timezone | Asia/Kolkata |
+| Backups | Daily encrypted to Google Drive; 30 daily + 12 monthly |
+| Import / export | Excel import; full ZIP export (CSV + Excel + manifest) |
+| Hosting | Local first (Dell, Windows 11); cloud-portable |
 
 ## 6. Functional requirements
 
 ### 6.1 Owner dashboard
-
-The dashboard should show: - Total members. - Active members. -
-Inactive/archived members, where useful. - Subscriptions expiring within
-15 days. - Total catalogue titles/editions and total physical copies. -
-Available copies. - Borrowed copies. - Overdue loans. - Monthly
-collections. - Recent transactions. - Pending operational actions and
-reminders.
-
-The dashboard should: - Support light and dark themes. - Allow the owner
-to rearrange widgets and persist their layout. - Include a global search
-for member name, mobile number, membership ID, book title, author, ISBN,
-copy ID, and transaction/receipt ID. - Include a calendar view for
-subscription expiries, book due dates, and reminder dates. - Provide
-quick actions for adding a member, adding a book, issuing a book, and
-recording a return.
+Default sections: overdue books; upcoming subscription expiries; backup failures; failed emails; damaged/lost-book decisions; token forfeitures; members requiring attention. There is **no Pending Payments section**. The owner configures section visibility and the criteria of "Members requiring attention". Members requiring attention — default criteria (accepted by the owner; criteria and section visibility remain owner-configurable): (1) members with expired subscriptions; (2) members whose borrowing is suspended because their ₹500 token was forfeited; (3) members with overdue books; (4) members with unresolved damaged or lost book cases; (5) members with pending owner decisions; (6) members with incomplete membership records.
+Also: total editions **and** total physical copies; total/active members; available and borrowed copies; monthly collections showing all receipts with subscription fees, token collections and other transactions separately (tokens never counted as subscription revenue); recent transactions; light/dark themes; rearrangeable widgets with persisted layout; global search (member name, mobile, member ID, title, author, ISBN, copy ID, transaction/receipt number); calendar of expiries, due dates and reminder dates; quick actions (add member, add book, issue, return).
 
 ### 6.2 Member management
-
-Member fields: - Unique, permanent membership ID, generated by the
-application (suggested format `COVEN-0001`). - Full name. - Mobile
-number (required, unique). - Email address (optional unless later
-decided otherwise). - Joining date. - Additional notes. - Status:
-active, suspended/inactive, archived.
-
-Requirements: - Owner can create, view, edit, suspend/reactivate,
-archive, and search members. - Registration is a guided workflow: member
-details → plan selection → subscription payment entries → refundable
-token collection → confirmation/receipt → activation. - A member can
-have only one current subscription at a time, but the system must retain
-all historical subscription records. - Membership ID remains unchanged
-across renewals. - Reactivation requires a payment record and a valid
-subscription; do not silently reactivate without the required financial
-record. - Archiving preserves history and prevents new borrowing. -
-Permanent deletion must be controlled. It must not cascade-delete loans,
-subscriptions, receipts, payment records, or token ledger entries. If
-historical/financial records exist, prefer archive or anonymisation
-rather than hard deletion. Any permitted deletion must require explicit
-confirmation and be audited. - A member leaving early is handled
-manually by the owner. The refundable token is refunded, subject to the
-outstanding-book and token rules. Subscription-fee refund policy is
-owner-decided and must be recorded as an explicit refund or adjustment
-rather than silently edited.
+Fields: permanent member ID (format `COV-M-000001`), full name, mobile (E.164, mandatory, unique), optional email, joining date, notes, owner-managed status (active, suspended, archived).
+- Owner can create, view, edit, suspend, reactivate, archive and search.
+- **Registration** is a guided workflow: details → plan → subscription payment entries → token collection → confirmation and receipt → activation. Activation happens only after the full subscription fee is paid and the token is collected. Entered data is retained on validation errors.
+- A member has at most one current subscription and one scheduled future subscription; history is retained. The member ID never changes, including on rejoining.
+- Eligibility: subscription dates determine subscription eligibility; owner status can independently suspend or archive. A valid subscription does not override suspension.
+- **Reactivation** of a suspended or archived member: the owner chooses to restore the previous arrangement or require a new subscription.
+- **Exit:** the owner handles early exit manually. The token is refunded if eligible (§6.6). The subscription fee is never refunded; there is no prorated or credit workflow and no subscription-fee refund transaction.
+- **Rejoining / fresh token:** the same member ID is kept and a fresh ₹500 token is paid, which begins a new token cycle (see §6.6 for the forfeited-token case).
+- **Deletion/anonymisation:** controlled; never cascades into financial, loan or audit history. Anonymisation changes live data only; historical backups remain unchanged until their normal retention expiry, and the application discloses this.
 
 ### 6.3 Book catalogue and inventory
-
-The chosen model is **each edition is a separate book record**, with
-individual physical copies belonging to that edition.
-
-Book/edition fields: - Title (required). - Author (required unless owner
-explicitly permits an unknown author). - Publisher. - Edition. -
-Publication year. - One category (no multiple categories). - Additional
-notes. - ISBN (optional). - Acquisition source: purchased or donated. -
-Donor details where applicable. - Acquisition date and cost where
-applicable. - Archived flag/status.
-
-Physical-copy fields: - Unique generated copy ID. - Barcode value and
-printable barcode. - Condition: Good, Poor, Damaged, Lost. -
-Availability/status: Available, Borrowed, Damaged, Lost, Withdrawn. -
-Shelf/rack location (optional). - Copy-specific notes. -
-Acquisition/source details if they differ from the title-level details.
-
-Requirements: - One edition can have multiple physical copies. - Each
-copy is tracked independently. - Damaged, lost, withdrawn, or borrowed
-copies cannot be issued. - If one copy is damaged but another copy is
-available, the available copy remains issuable. - Donated books become
-Coven Library property and have the same borrowing eligibility as
-purchased books. - Owner can archive a book/edition while preserving all
-history. - Owner can mark a copy lost, damaged, or withdrawn. - Do not
-hard-delete a book or copy that has transaction history. - A copy's
-condition must be recorded at issue and return. - Maintain a copy-level
-history of acquisition, issue, return, condition changes, and status
-changes.
+Editions and physical copies are separate entities; the dashboard reports both. Each edition is its own record.
+- **Edition:** title (required); author (may be blank or explicitly "Unknown author"); ISBN (optional; duplicates produce a warning, not a block); publisher; edition information; publication year; one category; description; notes; archived flag.
+- **Copy:** unique copy ID in the format `COV-C-000001` (generated, or a supplied legacy ID chosen per import); Code 128 barcode whose value is the copy ID; edition; **condition** (Good, Poor, Damaged, Lost) and **circulation status** (Available, Borrowed, Damaged, Lost, Withdrawn) as separate fields; a Poor-condition copy always has status Withdrawn; acquisition source (purchased/donated), donor, date, cost where applicable; shelf location; notes.
+- A copy is issuable only if condition is Good and status is Available. Poor, Damaged, Lost, Withdrawn and Borrowed copies are not issuable. Copy-level history (acquisition, issue, return, condition and status changes) is kept. Books or copies with history are never hard-deleted.
+- **Barcode labels:** Code 128 printable label sheets; the owner configures label dimensions and page layout. No fixed printer or label stock.
+- Categories are owner-managed.
 
 ### 6.4 Excel import
-
--   Import books and physical copies from an Excel workbook.
--   Provide a downloadable sample/template workbook with documented
-    columns.
--   Validate file type, required fields, categories, copy identifiers,
-    duplicate records, and data types before import.
--   ISBN is optional; if supplied, validate its format and identify
-    likely duplicates.
--   Show a preview with valid rows, invalid rows, and actionable error
-    messages.
--   Do not partially import silently. Owner must confirm the import
-    after reviewing validation.
--   Use a transaction or safe staged import so a failed import does not
-    leave inconsistent records.
--   Provide a downloadable error report.
--   Import must support books and copies; category and donor fields may
-    be included in the template where applicable.
+Books and copies; downloadable template. Workflow: select file → validate/map columns → preview with errors and warnings → owner decisions → owner confirmation → execution → summary and downloadable error report. Original rows are preserved in staging.
+- Per import the owner chooses whether to **create missing categories or reject** affected rows.
+- Per import the owner chooses whether to **use supplied legacy copy IDs or generate** them; conflicts are detected and duplicate copy IDs prevented.
+- Duplicate ISBNs produce warnings; the owner decides whether to continue; no automatic merging or silent discarding.
+- Atomic commit: a failed import leaves no partial data.
 
 ### 6.5 Subscription management
+Plans are configurable for future subscriptions; existing records keep their plan name, duration and price snapshot.
 
-Plans: - Six-month plan: ₹800. - Annual plan: ₹1,500. - Both plans have
-the same borrowing benefits. - Prices must be configurable for future
-subscriptions. Existing subscription records retain their original plan
-name, duration, and price snapshot.
+**Date calculation (A1, B1).** The start date is inclusive. The expiry date is the **first expired day** = start + N calendar months; if the start day does not exist in the target month it is clamped to that month's last day. The **last valid day** is the day before the expiry date. The member is active through the last valid day and expired from the expiry date onward. Calendar-month arithmetic, not fixed days.
 
-Subscription fields: - Member. - Plan. - Start date. - End/expiry
-date. - Subscription fee. - Status: scheduled, active, expired,
-cancelled, or otherwise explicitly defined. - Payment/receipt
-association. - Creation date and audit metadata.
+| Start | Duration | First expired day | Last valid day |
+|---|---|---|---|
+| 11 Nov 2026 | 6 months | 11 May 2027 | 10 May 2027 |
+| 31 Aug 2026 | 6 months | 28 Feb 2027 | 27 Feb 2027 |
+| 31 Jan 2027 | 1 month | 28 Feb 2027 | 27 Feb 2027 |
+| 29 Feb 2028 | 12 months | 28 Feb 2029 | 27 Feb 2029 |
 
-Rules: - No automatic renewal. - A new subscription can be created only
-when there is no overlapping current subscription. - If renewed before
-expiry, the new subscription starts immediately after the current
-subscription ends. - If renewed after expiry, the new subscription
-starts on the payment/activation date. - Owner chooses the plan at
-renewal. - System calculates expiry dates. - Expiry reminders appear on
-the dashboard. - A member cannot be issued a new book during the final
-15 days of their subscription. - The due date of a new loan must not
-extend beyond the subscription expiry date. - Issuance is blocked if the
-subscription has expired. - Existing loans remain visible after
-subscription expiry and must be resolved before token refund/membership
-closure. - Subscription history must be preserved.
+**Rules.**
+- No automatic renewal. The owner chooses the plan; the system calculates dates.
+- At most one current subscription and one scheduled future subscription; periods never overlap.
+- Early renewal starts on the current subscription's first expired day. Late renewal starts on the **owner-entered activation date**.
+- A subscription must be fully paid before activation; no outstanding-balance workflow exists.
+- **Subscription fees are non-refundable**, including early cancellation: no refund, no prorated or unused-period amount, no credit.
+- Renewal is blocked while the member's current token cycle is forfeited. The existing subscription stays valid, but new borrowing is suspended until a fresh ₹500 token is paid (§6.6).
+- Expiry reminders are emailed automatically and appear on the dashboard.
+- Existing loans stay visible after expiry and must be resolved before token refund or membership closure.
 
 ### 6.6 Refundable security token
+- ₹500, collected once per **token cycle** (first joining, and again on each rejoining), separate from subscription revenue, carried forward across ordinary renewals.
+- Refunded on eligible exit (cash or UPI, with optional reference) when no book is outstanding and the token has not been forfeited. No partial refund. A forfeited token is never refundable or automatically restored.
+- Separate immutable ledger entries represent collection, carry-forward, refund and forfeiture; corrections are reversals/adjustments.
+- Token collection is not revenue; forfeitures and refunds are reported separately.
 
--   Mandatory ₹500 refundable token, collected once per member.
--   Token is separate from subscription revenue.
--   Token is carried forward when the member renews.
--   Token is refunded when the member exits, provided the required
-    book-return conditions are met and the token has not been forfeited.
--   Token refund can be recorded as cash or UPI.
--   Owner records refund transaction reference where available.
--   Token ledger must separately represent collection,
-    carry-forward/continuity, refund, and forfeiture.
--   No partial token refund.
--   Damaged book: full token forfeiture.
--   Lost book: token forfeiture only; no additional replacement charge
-    under the confirmed rule.
--   Overdue book: token forfeiture only after a grace period.
--   **Unresolved:** grace-period length and the exact trigger for
-    forfeiture must be configurable or explicitly set before production
-    use.
--   Unreturned books remain overdue, the copy remains unavailable, the
-    member has an outstanding-book status, and token refund/membership
-    closure is blocked until resolved.
--   Do not count token collection as revenue.
--   Token forfeiture must be reported separately from subscription
-    income.
--   Every token movement must be represented by an immutable ledger
-    entry; corrections use reversal/adjustment entries.
+**Forfeiture events (full ₹500 each):**
+1. **Overdue.** Grace period = 7 calendar days after the due date (configurable setting). Example: due 10 May → grace 11–17 May → day 8 = 18 May. On day 8 forfeiture is **automatic**, needs no owner confirmation, and applies even if the book is returned on day 8. It is recorded in the ledger and audit log. If the Dell was off, it is processed at the next launch with the **original effective date (day 8)**; the actual processing timestamp is also recorded. The owner sees the grace end date and forfeiture status on each loan.
+2. **Damaged return.** The owner classifies the copy Damaged and **confirms** forfeiture; a reason is mandatory; audited; copy removed from circulation.
+3. **Poor-condition return.** The owner classifies the copy Poor and **confirms** forfeiture with a **mandatory reason**; audited. The copy's condition is Poor and its status is Withdrawn: removed from circulation and unavailable. Poor and Damaged are separate classifications.
+4. **Lost book.** The owner marks the book Lost and **confirms** forfeiture with a mandatory reason; audited; the loan closes with a Lost outcome and the copy becomes Lost. No replacement charge is defined. If the book is later recovered the forfeiture stays; any refund or correction needs a separate owner-approved financial adjustment.
 
-### 6.7 Borrowing, returns, and renewals
+**Grace-period changes.** A change to the grace-period setting applies to existing loans. If it makes a loan *newly* eligible for forfeiture, that forfeiture requires owner confirmation (this differs from normal automatic day-8 processing). The application records the previous and new setting, affected loans, newly eligible forfeitures, the owner's decision and resulting transactions. If the owner **declines**, the forfeiture is **not posted**; a mandatory reason and an audit record are required; the owner is not prompted again for the same event and the automatic day-8 job does not post it later.
 
-Loan fields: - Member. - Physical copy. - Issue date. - Due date. -
-Return date. - Condition at issue. - Condition at return. - Loan
-status. - Renewal history. - Notes.
+**Forfeited token.** After forfeiture the member cannot renew. Their existing subscription remains valid, but **new borrowing is suspended until a fresh ₹500 token is paid**. Paying it keeps the same member ID, starts a new token cycle, restores borrowing and makes the member eligible to renew again. The old forfeiture remains in the ledger and is never restored. This is separate from the owner-managed member status (suspended/archived).
 
-Issue rules: - One active loan per member. - One physical copy can have
-at most one active loan. - Default due date is 30 days after issue
-date. - Owner may adjust due date at issue, but it cannot exceed
-subscription expiry. - Block issue if member is suspended, archived, has
-an expired subscription, is within the final 15 days of subscription,
-already has an active loan, has an unresolved outstanding book, or the
-selected copy is unavailable/damaged/lost/withdrawn. - Validate all
-rules on the server, not only in the UI.
+### 6.7 Borrowing, returns and renewals
+**Issue rules (server-enforced).** One active loan per member; one active loan per copy; default due date 30 days after issue. The due date (at issue or renewal) must be **on or before the member's last valid subscription day**; the first expired day is never a valid due date. **New loans are blocked starting 15 full calendar days before the last valid day** (last valid 10 May → blocked from 25 April). These two rules are independent and both apply. Issue is also blocked when the member is suspended or archived, the subscription has expired, a book is outstanding, or the copy is not Good + Available. Condition is recorded at issue.
 
-Renewal rules: - Members may contact the owner by phone, text/WhatsApp,
-or email to request renewal. - There is no member-facing request portal
-or reservation queue. - Owner records an approved renewal in the
-application. - Unlimited renewals are permitted. - Each renewal adds 30
-days to the existing due date. - Preserve each renewal event, old due
-date, new due date, timestamp, and notes. - Do not permit renewal if it
-would violate the subscription end-date rule. If the existing policy is
-unclear for a renewal close to expiry, show a clear validation message
-and require an owner decision/policy clarification rather than silently
-extending beyond eligibility.
+**Renewal rules.** The owner records approved renewals. Unlimited; each adds 30 days to the existing due date. **No renewal once the due date has passed** (grace does not allow renewals). A renewal is blocked if the new due date would be after the last valid day or the membership is not valid through it; the owner renews the membership first. Each renewal keeps old/new due dates, timestamp and notes.
 
-Return rules: - Owner confirms returned copy and condition. - Record
-return date and condition. - If condition is damaged, apply the
-full-token-forfeiture rule, with explicit owner confirmation and a
-ledger event. - A returned, good/poor-but-usable copy becomes available
-according to owner-selected condition/status policy. - A damaged copy is
-unavailable until status is changed. - Keep full borrowing history,
-including renewals. - Never delete loan history.
+**Return rules.** The owner confirms the copy and its condition. Damaged, Poor and Lost outcomes follow §6.6; Good copies become Available. Full history is retained; loan history is never deleted. Unreturned books stay overdue, the copy stays unavailable, the member is "outstanding", and token refund or closure is blocked until resolved.
 
-### 6.8 Payments, receipts, and financial ledger
+**Backdating.** The owner may enter any past issue or return date. Every backdated operation requires a mandatory reason and an audit entry; if the date affects financial transactions, additional owner confirmation is required. The event date, the financial effective date and the processing timestamp are kept distinct.
 
-Payment methods: - Cash. - UPI.
-
-The owner records payments manually. No gateway integration in MVP.
-
-Support: - Subscription fee payments. - Token collection. - Token
-refund. - Token forfeiture. - Replacement/other charges only if
-introduced later; current lost-book rule is token forfeiture only. -
-Refunds. - Reversals and adjustments. - Backdated payment dates. - Split
-payments across methods, such as UPI plus cash.
-
-Rules: - A subscription must be fully paid before activation. - Partial
-payment entries may be recorded as components of a fully settled
-obligation; the system must not treat an incomplete subscription fee as
-paid or activate the subscription early. - One receipt can contain
-multiple payment entries against the same obligation. - Every financial
-transaction receives a unique ID (suggested `COVEN-TXN-00001`). -
-Receipt IDs are unique. - Receipt supports PDF download and browser
-printing. - Receipt includes library branding, receipt number, member
-ID/name, payment date, plan/duration, subscription amount, token amount,
-total collected, payment methods and amounts, and notes. - Preserve
-transaction date separately from entry/recorded timestamp. - Financial
-records are not silently edited or deleted. Corrections use
-reversal/adjustment records with reason, timestamp, and audit trail. -
-Refunds are recorded as separate transactions. - Do not create a general
-outstanding subscription balance workflow: the full required amount must
-be collected before activation.
+### 6.8 Payments, receipts and financial ledger
+- Methods: cash and UPI, recorded manually. Split payments: several entries settle one obligation; the full amount remains due until completely paid; activation is blocked until paid.
+- Transaction kinds: subscription payment, token collection, token refund, token forfeiture, adjustment, reversal. **No subscription-fee refund exists.**
+- Every financial transaction has a **globally unique internal transaction ID (UUID)**.
+- **Separate human-readable receipt sequences, each numbered per calendar year:** subscription payments `SUB-YYYY-000001`, token collections `TOK-YYYY-000001`, token refunds `REF-YYYY-000001`, financial adjustments `ADJ-YYYY-000001`. Forfeitures and reversals create their own immutable transaction records (UUID plus a link to the original); no customer receipt is defined for them. A combined registration printout shows both the subscription receipt and the token-collection receipt. Receipt numbers use the **calendar year (January–December, Asia/Kolkata) of the receipt issuance date**; a backdated payment or effective date never changes the receipt-number year. Example: payment effective date 31 Dec 2026, receipt issued 5 Jan 2027 → `SUB-2027-…`.
+- Receipts: PDF and print-friendly, with library branding, member ID/name, dates, plan and duration, subscription and token amounts shown separately, payment methods and amounts, notes.
+- Financial records are never edited or deleted. Corrections are reversals or adjustments carrying date/time, amount, type, reason, actor, and a link to the original.
+- Transaction date is distinct from recorded timestamp.
 
 ### 6.9 Revenue and financial reports
-
-Provide both reporting views:
-
-1.  **Cash/payment-date view:** groups actual receipts by the date money
-    was received. This supports collections and cash-flow review.
-2.  **Subscription-period allocation view:** allocates subscription fee
-    over the membership service period for management reporting. This is
-    not automatically a statutory accounting or tax report.
-
-Keep separate totals for: - Subscription fees collected. - Refundable
-tokens collected. - Tokens refunded. - Tokens forfeited. - Other
-charges/refunds/adjustments.
-
-For split payments, payment-date reports use the actual date and amount
-of each payment component. Subscription-period allocation uses the
-subscription fee only, excluding refundable token.
+Two views: (1) **payment-date collections** (actual amounts by payment date, each split component by its own date); (2) **subscription-period allocation**: daily pro-rata across valid subscription days, computed at full precision and rounded only for display; per-day rounded amounts are not stored. Tokens are excluded from subscription revenue. Separate totals: subscription fees collected, tokens collected, tokens refunded, tokens forfeited, adjustments. The allocation view is a management view, not a statutory report.
 
 ### 6.10 Reminders and communication
-
-Channels: - WhatsApp via prefilled message links. - Email via a
-generated message or `mailto:` link, subject to browser/device email
-configuration. - No WhatsApp Business API or automated email delivery in
-MVP.
-
-Templates: - Membership welcome. - Subscription expiring in 15 days. -
-Subscription expired. - Book due tomorrow. - Book overdue. - Payment
-confirmation. - Token refund confirmation.
-
-Requirements: - Owner can edit message text before opening the
-communication link. - Templates support safe placeholders such as member
-name, due date, book title, plan, and amount. - Record reminder
-generated/sent status and timestamp. Since opening WhatsApp/email does
-not prove delivery, label status accurately (for example, "Prepared" and
-owner-confirmed "Marked sent"), not "Delivered". - Daily reminder list
-is generated when the application is opened or through a lightweight
-scheduled mechanism appropriate to the deployment. - Dashboard is
-sufficient; no morning email summary. - Reminder categories include
-subscriptions expiring in 15 days, expired subscriptions, upcoming
-returns, overdue books, and pending payment actions where relevant.
+**Email is sent automatically through SMTP.** **Scheduled reminders** run at **09:00 Asia/Kolkata**: subscription expiry reminder **15 days before the expiry date**; overdue reminders on the **due date, day 3 and day 7** (days counted after the due date); subscription expiry notice. **Immediate notifications:** subscription activation, payment receipt, loan issue, loan renewal, book return and token forfeiture — the day-8 forfeiture notification is sent **immediately after forfeiture processing**. **SMTP retries:** the initial email is sent immediately; **retry 1 is 5 minutes after the initial failure, retry 2 is 30 minutes after retry 1 fails, retry 3 is 2 hours after retry 2 fails** (each delay runs from the preceding failed attempt, not cumulatively from the first failure). After the third retry fails the notification is marked **failed** and the error details are retained; there is no further retrying. Retries reuse the same notification record, so they never create duplicate emails; the same event never produces more than one email (duplicate prevention). A member with no email address is recorded as **skipped with the reason `no email address`**. Statuses: Prepared, SMTP accepted, SMTP failed, Skipped; SMTP accepted ≠ delivered or read. All scheduled times are in Asia/Kolkata. SMTP settings come from the environment; a test-email action is provided. Failed emails show on the dashboard.
+**WhatsApp is manual.** The application generates a prefilled message for the selected member's number and opens WhatsApp; the owner reviews and sends. Never automatic. Templates (welcome, expiry, due, overdue, payment, refund) use safe placeholders and are editable.
 
 ### 6.11 Reports and exports
-
-Reports: - Member-wise borrowing history. - Book/copy-wise borrowing
-history. - Subscription history. - Revenue and collections. - Inventory
-availability. - Lost/damaged/withdrawn copies. - Overdue loans. - Most
-borrowed books/authors/genres. - Never-borrowed books. - Average
-borrowing frequency. - Member retention/renewal statistics. - Member
-statement containing subscriptions, payments, borrowing, and token
-transactions.
-
-Date filters: - Today, this week, this month, this quarter, this year,
-custom range.
-
-Export formats: - CSV, Excel, and PDF where appropriate. - Full
-application data export for migration/recovery. - Exports must respect
-the same access controls as the application.
+Reports: members and subscriptions; subscription collections; revenue allocation; token collections, refunds and forfeitures; financial adjustments; outstanding and overdue loans; lost and damaged copies; inventory and circulation; member history and statement; borrowing statistics. Date filters: today, week, month, quarter, year, custom. Formats: CSV, XLSX, PDF where applicable. **Full export** is a ZIP containing CSV files, Excel files and a manifest.
 
 ### 6.12 Settings
+Library name, logo, address, contact; receipt footer; plan prices and durations (future subscriptions only); loan duration; token amount (future cycles); grace period (applies to existing loans, with the confirmation safeguard in §6.6); reminder templates; theme; dashboard sections and attention criteria; barcode label layouts; backup time and Drive folder; SMTP test. Settings never alter historical subscription prices, token obligations or past dates.
 
-Owner can configure: - Library name, logo, address, contact number,
-email. - Receipt footer. - Subscription plan prices and durations for
-future subscriptions. - Borrowing duration. - Token amount for future
-members (existing member token snapshots remain unchanged). - Grace
-period for overdue token forfeiture. - Library policies. - Reminder
-templates. - Theme preference. - Backup settings.
-
-Changing a setting must not retroactively alter existing subscription
-prices, token obligations, or historical loan dates.
-
-## 7. Design requirements
-
-The owner will upload the preferred design colours and fonts separately.
-Treat those assets/instructions as authoritative when provided.
-
-Until the assets arrive: - Use a combination of editorial minimal,
-modern SaaS, and literary luxury. - Keep the interface calm, readable,
-polished, and operationally efficient. - Provide light and dark
-themes. - Use a consistent spacing scale, typography hierarchy,
-component library, and design tokens. - Do not invent final brand
-colours or fonts; isolate them as design tokens so they can be replaced
-when the owner supplies the design guide. - Prioritise desktop/laptop
-use at the Dell's display resolution, while retaining responsive layouts
-for practical access. - Use accessible contrast, visible focus states,
-clear form errors, and keyboard-friendly interactions. - Use tables for
-dense operational data, with search, sorting, filters, pagination, and
-clear empty states. - Avoid excessive animation and heavy visual
-effects.
+## 7. Design
+The owner's brand references define the look; final fonts have not been supplied and the lettering artwork is not a font file. Direction: editorial minimal + modern SaaS + literary luxury; calm, legible, efficient. Light and dark themes; design tokens for colours and typography so they can be replaced; accessible contrast, visible focus, keyboard-friendly, clear form errors; dense tables with search, sort, filter, pagination and empty states; minimal animation; desktop-first. Provisional palette: charcoal, terracotta/burnt orange, cream/parchment, muted green. Decorative botanical artwork only on login, empty states, header and receipts. See §16.
 
 ## 8. Technical architecture
+Python 3.12; Django 5.2 LTS; PostgreSQL; Django Templates + HTMX; Bootstrap 5 (token-customised); Chart.js; Django ORM and migrations; Excel and PDF libraries; Google Drive API for backups. Modular monolith. No React, microservices, Redis, Celery; Docker not required. Details: `docs/TECHNICAL_ARCHITECTURE.md`.
 
-### 8.1 Recommended stack
+**Runtime and deployment.** Local-first on the Dell (Windows 11), localhost-only, no LAN. Configuration via environment variables; no hard-coded paths or hostnames; portable PostgreSQL backups allow later cloud migration. The macOS MacBook is a separate development environment. Before launch a concise local-vs-cloud decision memo (requirements, risks, backup implications, migration effort) is presented.
 
--   Python 3.12 or a currently supported stable Python release
-    compatible with selected Django version.
--   Django (current supported LTS/stable version at implementation
-    time).
--   PostgreSQL.
--   Django Templates.
--   HTMX for targeted interactive updates.
--   Bootstrap 5, customised using CSS variables/design tokens.
--   Chart.js for charts.
--   Django ORM and migrations.
--   Django authentication and sessions.
--   A maintained Python library for Excel import/export.
--   A maintained PDF generation approach for receipts and reports.
--   Google Drive API integration for encrypted backup upload, only after
-    credentials and consent are configured.
--   Git and GitHub.
+**Capacity.** 50 members and 200 editions comfortably; paginate; avoid N+1 queries; index identifiers and search fields; minimal background processes.
 
-Use a modular monolith. Do not introduce React, microservices,
-Kubernetes, Redis, Celery, or Docker in the initial implementation
-unless a demonstrated requirement justifies them.
+## 9. Data model
+See `docs/ERD.md`. Key integrity rules: unique permanent member ID; unique mobile; unique copy ID and barcode; one active loan per member and per copy; one category per edition; non-overlapping subscriptions; one token collection per token cycle; no double refund or forfeiture; money in integer paise; no cascade deletion of history; immutable financial records.
 
-### 8.2 Runtime and deployment
-
-The Dell laptop has 8 GB RAM and 256 GB storage and will be used to
-access the application. The M3 MacBook Air (16 GB RAM / 512 GB storage)
-is the development machine.
-
-The initial hosting decision is not final. The owner is considering
-local execution on the Dell initially and cloud hosting later. Design
-the app to support both with environment-based configuration and
-portable PostgreSQL backups. Do not hard-code local paths, hostnames, or
-deployment assumptions.
-
-Internet is required for application operation in the initial release.
-Do not build offline mode.
-
-Do not make the Dell a production server by default without documenting
-the operational and security trade-offs. Before deployment, present a
-concise local-vs-cloud decision with requirements, risks, backup
-implications, and migration effort.
-
-### 8.3 Performance and capacity
-
--   Support at least 50 members and 200 catalogue entries comfortably.
--   Design for growth beyond these initial numbers without
-    overengineering.
--   Paginate large tables.
--   Avoid N+1 database queries.
--   Use database indexes for identifiers and common search/filter
-    fields.
--   Keep dependencies and background processes minimal.
--   The application should remain usable on the Dell's 8 GB RAM
-    environment.
-
-## 9. Data model --- initial entity inventory
-
-Final fields and constraints must be documented in the technical design
-before implementation.
-
-Suggested entities: - `OwnerAccount` (or Django user constrained to one
-owner). - `Member`. - `Category`. - `BookEdition` (each edition is a
-separate book record). - `BookCopy`. - `Acquisition/DonationRecord`
-where useful. - `SubscriptionPlan`. - `MemberSubscription`. -
-`SecurityDepositAccount` or equivalent member-level token state. -
-`SecurityDepositLedgerEntry`. - `PaymentObligation` / `Payment`. -
-`PaymentEntry` for split methods. - `Receipt`. - `Loan`. -
-`LoanRenewal`. - `CopyConditionEvent` / `InventoryEvent`. -
-`ReminderTemplate`. - `ReminderLog`. - `AuditLog`. -
-`DashboardPreference`. - `LibrarySetting`. - `BackupRun`.
-
-Important integrity constraints: - Member ID unique and immutable. -
-Mobile number unique. - Copy ID unique. - Barcode unique. - One active
-loan per member. - One active loan per copy. - ISBN optional; if
-present, indexed and duplicate warning/validation should account for
-editions and copies. - One category per book edition. - Subscription
-periods must not overlap for a member. - Subscription must be fully
-settled before activation. - One mandatory token collection per
-member. - Token ledger balance cannot be refunded twice or become
-negative. - Historical financial records and loan events cannot be
-cascade-deleted. - All money stored as decimal/integer paise, never
-floating-point.
-
-## 10. Backup, restore, and data portability
-
--   Daily encrypted database backup to Google Drive.
--   Retain 30 daily backups and 12 monthly backups.
--   Define retention and rotation so monthly backups are not
-    accidentally deleted by daily cleanup.
--   Backup should include database data and required uploaded
-    assets/configuration that are safe to back up; secrets must be
-    handled separately and never uploaded in plaintext.
--   Verify backup integrity and record backup status/time.
--   Show last successful backup and last failure in settings/dashboard.
--   Restore capability is required, with explicit confirmation and
-    pre-restore safety backup.
--   Provide full data export.
--   Google Drive API credentials must be configured securely; do not
-    invent credentials or bypass OAuth/consent.
--   Recovery on another computer is not yet decided; document as a
-    future operational decision, but design backups to be portable.
+## 10. Backup, restore and data portability
+- Daily backup at a fixed configured time; a catch-up backup runs at the next launch if the Dell was off; the dashboard warns if the last success is older than 26 hours and shows failures.
+- Pipeline: `pg_dump -Fc` → media files → manifest → AES-256-GCM → SHA-256 → Google Drive upload → upload verification → retention (30 daily, 12 monthly; daily cleanup never deletes monthly backups).
+- **Key:** randomly generated; the working key is held in Windows Credential Manager on the Dell. The owner saves a separate recovery key and never stores it with the backups. Losing the recovery key may make backups unrecoverable; this is stated plainly.
+- **Google Drive:** the owner connects their Google account and selects the folder; `drive.file` scope; a replacement computer needs fresh OAuth consent.
+- **Replacement-computer recovery:** install prerequisites; obtain the encrypted backup and the recovery key; owner explicitly confirms key restoration; restore the working key into Windows Credential Manager; verify key access and backup integrity; restore database and media; check compatibility and migrations; verify the application. Credential Manager entries do not transfer automatically. Restore is CLI-first with explicit confirmation and a pre-restore backup.
+- Recovery is not declared verified until a restore on a clean replacement machine has been performed.
+- Full data export as in §6.11.
 
 ## 11. Auditability
-
-Audit sensitive actions: - Member create/edit/archive/reactivate. -
-Subscription creation/renewal/cancellation. - Payment, refund, reversal,
-adjustment. - Token collection/refund/forfeiture. - Book/copy
-create/edit/archive/status change. - Loan issue/return/renewal. - Backup
-and restore. - Login events and security-sensitive settings changes.
-
-Audit entries should include actor, action, entity, timestamp, and a
-safe summary of changed values. Avoid storing secrets or unnecessary
-sensitive data.
+Audited: member create/edit/status/archive/anonymise; subscription create/renew/cancel; payments, reversals, adjustments; token collection, refund, forfeiture (automatic and confirmed); copy create/edit/status/condition; loans, renewals, returns; backdated operations; grace-setting changes and confirmations; backups and restores; login events (including failures) and security-sensitive settings. Entries record actor, action, entity, timestamp and a safe summary, without secrets.
 
 ## 12. Acceptance criteria
+Demonstrated by automated tests and/or documented manual verification:
+1. Only the owner can log in; all routes require login; repeated logins per day are allowed after logout or session loss; sessions end at day end.
+2. Five failed logins in 15 minutes are rate-limited without locking the account; success resets the counter.
+3. Guided registration creates a permanent unique member ID; duplicate mobile numbers are rejected.
+4. Plans calculate dates per §6.5 (all four example rows) and retain historical prices.
+5. Split cash/UPI entries settle one obligation; activation requires full payment and the token.
+6. Token collections are excluded from subscription revenue.
+7. Early renewal starts on the first expired day; late renewal on the entered activation date; at most one scheduled subscription; no overlap.
+8. New loans are blocked from last valid day − 15 and after expiry; due dates never exceed the last valid day; first expired day rejected.
+9. One active loan per member and per copy; only Good + Available copies issue.
+10. Renewals add 30 days, are blocked after the due date, and are blocked beyond the last valid day.
+11. Day-8 forfeiture is automatic (10 May due → 18 May), applies when returned on day 8, and a missed run is processed at the next launch with effective date day 8.
+12. Damaged, Poor and Lost forfeitures require owner confirmation and a reason (a Poor copy becomes Withdrawn); Lost closes the loan Lost; recovered lost books are not auto-reversed.
+13. A grace-setting change creates owner-confirmation prompts for newly eligible forfeitures with a full record; a declined forfeiture is not posted, needs a reason and is not prompted again.
+14. Token refund is blocked while a book is outstanding; after forfeiture renewal and new borrowing are blocked while the existing subscription stays valid; paying a fresh ₹500 keeps the member ID, starts a new token cycle and restores borrowing.
+15. No subscription-fee refund path exists anywhere.
+16. Corrections create reversals/adjustments; originals remain; four receipt sequences and unique internal IDs.
+17. Backdated operations require reason and audit; financial effects require additional confirmation.
+18. Receipts download and print.
+19. Automatic emails follow the schedule in §6.10 (09:00 Asia/Kolkata reminders; retries 5 min after the initial failure, 30 min after retry 1, 2 h after retry 2, then marked failed with error kept), never duplicate, record skipped members with a reason, and record Prepared/SMTP accepted/SMTP failed/Skipped; WhatsApp is never sent automatically.
+20. Dashboard shows the default sections (no Pending Payments) with configurable visibility and attention criteria.
+21. Reports support the date filters; allocation keeps full precision; ZIP export contains CSV, Excel and manifest.
+22. Excel import validates and previews, honours per-import category and copy-ID choices, warns on duplicate ISBNs.
+23. Daily encrypted backups run, health is visible, 26-hour warning works; retention 30 + 12.
+24. A restore, including key restoration into Windows Credential Manager, is verified on a clean machine.
+25. The application works in the Dell browser on localhost.
+26. No critical rule is enforced only in frontend code.
 
-The MVP is not complete until all of the following are demonstrated by
-automated tests and/or documented manual verification:
-
-1.  Only the owner can log in and access application data.
-2.  A member can be created through the guided registration workflow and
-    receives a permanent unique ID.
-3.  Duplicate mobile numbers are rejected.
-4.  The two subscription plans calculate the correct duration and retain
-    historical prices.
-5.  Split UPI/cash payment entries settle one subscription obligation
-    and generate one receipt.
-6.  Subscription cannot activate until its full fee is paid and the
-    mandatory token is recorded.
-7.  Token collection is excluded from subscription revenue.
-8.  Early renewal starts after the current subscription; late renewal
-    starts on the new activation/payment date.
-9.  New issuance is blocked during the final 15 days of subscription and
-    after expiry.
-10. One member cannot hold more than one active loan.
-11. A copy cannot be issued if unavailable, borrowed, damaged, lost, or
-    withdrawn.
-12. Default loan duration is 30 days; owner may adjust due date subject
-    to subscription expiry.
-13. Renewals add 30 days and preserve each renewal event.
-14. Return records condition and updates copy availability correctly.
-15. Overdue loans remain visible and token forfeiture does not occur
-    before the configured grace period.
-16. Damaged/lost book token rules are enforced and audited.
-17. Token refund is blocked while an outstanding book remains
-    unresolved.
-18. Financial corrections create reversal/adjustment records and do not
-    erase original entries.
-19. Receipts can be downloaded and printed.
-20. WhatsApp/email messages can be edited, prepared, and logged without
-    falsely claiming delivery.
-21. Reports support required date filters and exports.
-22. Excel import validates and previews books/copies before committing.
-23. Daily encrypted backups run and backup status is visible.
-24. Restore workflow is tested against a backup in a non-production
-    environment.
-25. The application works on the Dell browser at the chosen deployment
-    configuration.
-26. No critical business rule is enforced only in frontend JavaScript;
-    server-side validation and database constraints are used where
-    appropriate.
-
-## 13. Open decisions and implementation blockers
-
-The following must be explicitly resolved or configured before
-production:
-
-1.  **Overdue grace period:** exact number of days and whether it is
-    calendar days. Do not guess. Make it a required setting with no
-    silent default; prevent production activation/forfeiture until
-    configured.
-2.  **Damaged-book trigger:** confirm whether any return marked Damaged
-    causes immediate full token forfeiture, or whether the owner must
-    explicitly confirm forfeiture after reviewing the damage.
-    Recommended UX: require explicit confirmation and reason.
-3.  **Poor condition:** clarify whether a Poor copy is still borrowable
-    or must be marked unavailable.
-4.  **Subscription end-date calculation:** define whether a
-    six-month/annual plan ends on the day before the corresponding
-    anniversary or on the anniversary date; implement one consistent
-    documented convention.
-5.  **Renewal near expiry:** confirm whether a loan renewal may extend
-    beyond subscription expiry. The existing new-issue rule says due
-    date cannot exceed subscription expiry; apply a conservative block
-    until owner confirms otherwise.
-6.  **Email workflow:** decide whether email is a `mailto:` draft only
-    or whether SMTP sending is required. MVP may use a draft link.
-7.  **Google Drive backup:** OAuth account, API project, and backup
-    folder must be configured by owner.
-8.  **Local vs cloud hosting:** decide before production launch. Keep
-    architecture portable.
-9.  **One-owner account recovery:** define password reset/recovery
-    process without creating staff accounts.
-10. **Book/copy count semantics:** define whether "200 books" means
-    catalogue records, editions, or physical copies for dashboard
-    labels.
+## 13. Remaining detail questions
+All business policy and all specification questions are decided (see `OPEN_QUESTIONS.md`). No decision is outstanding.
 
 ## 14. Delivery phases
-
-### Phase 0 --- Specification and setup
-
--   Confirm open blockers.
--   Establish repository, `CLAUDE.md`, environment variables, code
-    conventions, and test strategy.
--   Produce ERD and model specification.
-
-### Phase 1 --- Foundation
-
--   Django project, PostgreSQL, authentication, base layout, themes,
-    navigation, settings, audit log.
-
-### Phase 2 --- Catalogue and members
-
--   Members, categories, editions, copies, copy history, Excel import,
-    search.
-
-### Phase 3 --- Membership and finance
-
--   Plans, subscriptions, token ledger, split payments, receipts,
-    refunds, reversals, financial reports.
-
-### Phase 4 --- Circulation
-
--   Issue, return, condition checks, renewal, overdue logic,
-    grace-period workflow.
-
-### Phase 5 --- Dashboard and communication
-
--   Dashboard widgets, calendar, reminders, WhatsApp/email draft
-    generation, activity feed.
-
-### Phase 6 --- Reports and data portability
-
--   Reports, exports, member statements, full data export.
-
-### Phase 7 --- Backup, hardening, and deployment
-
--   Google Drive encrypted backups, retention, restore testing, security
-    review, Dell/browser verification, deployment decision.
+Phase 0 specification (this document set) → 1 foundation (project, auth, layout, settings, audit) → 2 members and catalogue (+ import) → 3 memberships and finance → 4 circulation → 5 dashboard and communications → 6 reports and exports → 7 backup, recovery, hardening, deployment. Detailed plan: `IMPLEMENTATION_PLAN.md`.
 
 ## 15. Definition of done
+Requirements and edge cases implemented; server-side validation; database constraints where appropriate; automated tests for normal, invalid and boundary cases; loading/success/error/empty states; audit requirements met; no secrets committed; documentation updated; relevant tests pass; an honest report of what changed, what was tested and what remains.
 
-A feature is done only when: - Requirements and edge cases are
-implemented. - Server-side validation exists. - Database constraints are
-present where appropriate. - Automated tests cover normal, invalid, and
-boundary cases. - UI includes loading, success, error, and empty
-states. - Audit requirements are met. - No secrets or credentials are
-committed. - Documentation is updated. - Relevant test suite passes. -
-Claude Code reports exactly what it changed, what it tested, and what
-remains unresolved.
-
-
-## 16. Brand and visual reference assets
-
-The owner supplied two visual references:
-- An orange-and-cream botanical wreath illustration on a near-black background.
-- A “Coven Coffee” wordmark on a dark, textured green background.
-
-Use these as brand-direction references, not as permission to rename the product. The application/product name remains **Coven Library** unless the owner explicitly confirms otherwise.
-
-Visual direction to explore:
-- Near-black / charcoal foundations for dark surfaces.
-- Burnt orange / terracotta as a primary accent.
-- Warm cream / parchment as a supporting light tone.
-- Muted botanical green as a secondary accent.
-- Hand-drawn botanical illustration as a restrained decorative motif.
-
-Do not sample colours blindly and apply them everywhere. Define accessible design tokens and verify text/background contrast in both themes. Keep the application highly legible and operationally efficient; decorative botanical elements should be limited to login, empty states, headers, or subtle brand placements, not dense data tables.
-
-The supplied wordmark image reads “Coven Coffee”. Do not place that exact wording in the product UI or use it as the Coven Library logo without owner confirmation. Treat it as a lettering/style reference only. No separate font files or font-family specification have been supplied yet; keep typography tokens replaceable and ask the owner for the intended font files/names before finalising typography.
-
-When the owner places the images in the repository, preserve the originals under `assets/brand/references/` and document their filenames in the design system notes. Do not modify or overwrite the source images.
-
-
-## 17. Confirmed operational decisions — latest update
-
-- **Overdue grace period:** seven calendar days after the due date. If the book remains unreturned after the complete seven-day grace period, the entire ₹500 token is forfeited. A return during the grace period does not trigger overdue forfeiture.
-- **Damaged return:** if the copy is returned in Damaged condition, the entire ₹500 token is forfeited. Require explicit owner confirmation and capture a reason/audit event.
-- **Poor condition:** a Poor-condition copy is removed from circulation and cannot be issued.
-- **Renewal beyond membership expiry:** recommended strict rule: block if the resulting due date exceeds subscription expiry; renew the member's subscription first. This awaits final owner confirmation.
-- **Subscription expiry convention:** recommended: subscription start date is inclusive and the last valid date is the day before the six-/twelve-month anniversary. The anniversary date is the first expired day. This awaits final owner confirmation.
-- **Email:** SMTP sending is selected. SMTP settings and credentials must be securely configurable; do not commit secrets.
-- **Hosting:** local deployment first, with cloud migration supported if needed.
-- **Recovery:** restoration on another computer is required using encrypted Google Drive backups.
-- **Design:** owner will supply final colours and fonts; existing images are visual references.
-
-### Seven-day grace-period calculation
-
-If a book's due date is 10 May:
-- 10 May: due date.
-- 11–17 May: seven calendar days of grace.
-- 18 May: if still unreturned, the overdue-token forfeiture condition is met.
-
-The implementation must use the configured library timezone and date-based comparisons consistently. The owner should see the grace-period end date and forfeiture status before the forfeiture action is posted.
-
-
-## 18. Confirmed product name and brand identity
-
-The official application/product name is **Coven's Library**.
-
-The owner supplied three visual references:
-- A “Coven Coffee” wordmark on a dark textured green background.
-- A vertical decorative Coven lettering/sticker reference.
-- A cream card with “Coven” lettering inside an ornate burnt-orange frame.
-
-Brand requirements:
-- Use **Coven's Library** as the product name in application navigation, login, page titles, receipts, and relevant system-generated messages.
-- The word “Coffee” is not part of the product name and must not appear in the application UI.
-- Incorporate the distinctive supplied **Coven lettering style** into the brand identity. Use the supplied lettering/logo artwork as a wordmark or image asset where appropriate.
-- Do not claim that a usable font file has been supplied. The images show lettering artwork, not an installable font. For body text and interface controls, use a highly legible complementary font. Keep the display/brand font and UI font as separate configurable design tokens.
-- If the owner later supplies an actual font file or font-family name, use it subject to its licence and browser compatibility.
-- The botanical wreath, ornate orange frame, cream background, dark green texture, and hand-lettered wordmark are brand references. Use them selectively; do not let decorative artwork reduce readability or usability.
-- Preserve source images under `assets/brand/references/` and create optimised derived assets for the web app without modifying the originals.
-- The final logo lockup should read **Coven's Library**, not “Coven Coffee”. If a combined lockup is designed, use the Coven lettering for “Coven's” and a clear complementary typeface for “Library”.
+## 16. Brand and visual identity
+The product name is **Coven's Library** (exact apostrophe). "Coffee" never appears in the interface.
+Owner-supplied references (preserved unmodified in `assets/brand/references/`): `coven-coffee-wordmark.png` (white script "Coven" on dark green texture), `coven-lettering-sticker.jpeg` (vertical vine lettering), `coven-ornate-logo.jpeg` (cream card, "Coven" in an ornate burnt-orange frame), `botanical-wreath.jpeg` (floral wreath on near-black).
+- The lettering is image artwork, not an installable font; no font file or family name has been supplied. The distinctive "Coven" lettering may be used as logo artwork; the lockup reads "Coven's Library" with a clear complementary typeface for "Library". Body and interface text use a legible UI font.
+- Display and UI typography are separate replaceable tokens; a real font may replace them later subject to licence and browser compatibility.
+- Derived, optimised logo assets are stored separately from the originals. Provisional palette (charcoal, terracotta, cream, muted green) is documented in `docs/TECHNICAL_ARCHITECTURE.md` §15 and is replaceable.
+- Decorative artwork must not reduce readability; keep it out of dense operational screens.
