@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block heading %}Members{% endblock %}
+{% block content %}
+<div class="card-surface">
+  <form method="get" class="d-flex gap-2 mb-3" role="search">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="Search name, mobile or member ID" aria-label="Search members">
+    <select class="form-select" name="status" aria-label="Status filter" style="max-width:12rem">
+      <option value="">All statuses</option>
+      {% for value, label in statuses %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button class="btn-primary-token" type="submit">Search</button>
+    <a class="btn-primary-token" href="{% url 'members:create' %}" style="text-decoration:none">Add member</a>
+  </form>
+  <table class="table">
+    <thead><tr><th>Member ID</th><th>Name</th><th>Mobile</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for m in page %}<tr><td><a href="{% url 'members:detail' m.pk %}">{{ m.membership_no }}</a></td><td>{{ m.full_name }}</td><td>{{ m.mobile_e164 }}</td><td>{{ m.get_status_display }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="text-muted-token">No members found.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "partials/pagination.html" with qs="q="|add:q|add:"&status="|add:status|add:"&" %}
+</div>
+{% endblock %}

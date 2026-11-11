@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block heading %}Import preview{% endblock %}
+{% block content %}<div class="card-surface">
+<p><strong>{{ batch.filename }}</strong> — status: {{ batch.get_status_display }}</p>
+{% if batch.status == 'confirmed' %}
+<p>Imported {{ batch.summary.editions }} edition(s) and {{ batch.summary.copies }} copies; {{ batch.summary.categories_created }} categories created; {{ batch.summary.rows_skipped }} row(s) left out.</p>
+{% else %}
+<p>{{ summary.total }} rows: <strong>{{ summary.valid }} valid</strong>, <strong>{{ summary.invalid }} with errors</strong>, {{ summary.isbn_warning_rows }} duplicate-ISBN warning(s). {{ summary.copies }} copies would be created.{% if summary.new_categories %} New categories: {{ summary.new_categories|join:", " }}.{% endif %}</p>
+<form method="post" novalidate>{% csrf_token %}{% include "partials/form_fields.html" %}
+<button class="btn-primary-token" type="submit" name="refresh">Update preview</button>
+<button class="btn-primary-token" type="submit" name="confirm">Confirm import</button></form>
+{% endif %}
+<p class="mt-3"><a href="{% url 'catalogue:import_errors' batch.pk %}">Download error and warning report (CSV)</a></p>
+<table class="table"><thead><tr><th>Row</th><th>Title</th><th>Result</th><th>Messages</th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.row_number }}</td><td>{{ r.data.Title }}</td><td>{% if r.is_valid %}OK{% else %}Error{% endif %}</td>
+<td>{% for e in r.errors %}<div class="text-danger">{{ e.field }}: {{ e.message }}</div>{% endfor %}{% for w in r.warnings %}<div class="text-muted-token">{{ w.field }}: {{ w.message }}</div>{% endfor %}</td></tr>{% endfor %}</tbody></table>
+</div>{% endblock %}

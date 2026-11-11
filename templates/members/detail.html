@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block heading %}{{ member.membership_no }}{% endblock %}
+{% block content %}
+<div class="card-surface">
+  <h1 style="font-family: var(--font-display)">{{ member.full_name }}</h1>
+  <dl>
+    <dt>Member ID</dt><dd>{{ member.membership_no }}</dd>
+    <dt>Mobile</dt><dd>{{ member.mobile_e164 }}</dd>
+    <dt>Email</dt><dd>{{ member.email|default:"—" }}</dd>
+    <dt>Joined</dt><dd>{{ member.joined_on }}</dd>
+    <dt>Status</dt><dd>{{ member.get_status_display }}{% if member.needs_new_subscription %} (new subscription required){% endif %}{% if member.anonymised_at %} — anonymised {{ member.anonymised_at|date:"Y-m-d" }}{% endif %}</dd>
+    <dt>Notes</dt><dd>{{ member.notes|default:"—" }}</dd>
+  </dl>
+  {% if not member.anonymised_at %}
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn-primary-token" style="text-decoration:none" href="{% url 'members:edit' member.pk %}">Edit</a>
+    {% if member.status == 'active' %}
+    <form method="post" action="{% url 'members:action' member.pk 'suspend' %}">{% csrf_token %}<button class="btn-primary-token" type="submit">Suspend</button></form>
+    {% endif %}
+    {% if member.status != 'archived' %}
+    <form method="post" action="{% url 'members:action' member.pk 'archive' %}">{% csrf_token %}<button class="btn-primary-token" type="submit">Archive</button></form>
+    {% endif %}
+    <a class="btn-primary-token" style="text-decoration:none" href="{% url 'members:anonymise' member.pk %}">Anonymise…</a>
+  </div>
+  {% if member.status != 'active' %}
+  <form method="post" action="{% url 'members:action' member.pk 'reactivate' %}" class="mt-3">{% csrf_token %}
+    <fieldset><legend>Reactivate</legend>{{ reactivate_form.mode }}</fieldset>
+    <button class="btn-primary-token" type="submit">Reactivate</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

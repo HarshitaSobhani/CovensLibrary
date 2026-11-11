@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block heading %}Import books{% endblock %}
+{% block content %}<div class="card-surface" style="max-width:40rem">
+<p>Download the <a href="{% url 'catalogue:import_template' %}">template workbook</a>, fill the <em>Books</em> sheet, then upload it. You will review a preview before anything is imported.</p>
+<form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}{% include "partials/form_fields.html" %}<button class="btn-primary-token" type="submit">Upload and validate</button></form></div>{% endblock %}

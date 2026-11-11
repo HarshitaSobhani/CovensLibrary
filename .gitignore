@@ -1,0 +1,19 @@
+# Python / virtualenv
+.venv/
+__pycache__/
+*.py[cod]
+# Secrets and local config
+.env
+.env.*
+!.env.example
+# OS files
+.DS_Store
+# Tooling output
+.coverage
+htmlcov/
+.ruff_cache/
+# Runtime data (never committed)
+/media/
+/backups/
+/staticfiles/
+/import_staging/

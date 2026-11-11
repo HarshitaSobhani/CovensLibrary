@@ -1,0 +1,28 @@
+/* Provisional design tokens (replaceable). Palette: charcoal, terracotta, parchment, muted green.
+   Contrast of text pairs is verified by core/tests/test_tokens.py (WCAG AA >= 4.5:1). */
+:root {
+  --bg: #f6efe2;
+  --surface: #fbf7ee;
+  --text: #1f1d1a;
+  --text-muted: #6b665a;
+  --primary: #a8431a;
+  --on-primary: #ffffff;
+  --accent-green: #4f6b4a;
+  --border: #d9cfba;
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sidebar-bg: #1f1d1a;
+  --sidebar-text: #efe7d6;
+}
+[data-theme="dark"] {
+  --bg: #141512;
+  --surface: #1d1f1b;
+  --text: #efe7d6;
+  --text-muted: #a8a294;
+  --primary: #e8763c;
+  --on-primary: #141512;
+  --accent-green: #8fae88;
+  --border: #34372f;
+  --sidebar-bg: #0e0f0d;
+  --sidebar-text: #efe7d6;
+}

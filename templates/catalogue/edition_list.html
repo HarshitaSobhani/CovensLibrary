@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block heading %}Books &amp; Inventory{% endblock %}
+{% block content %}<div class="card-surface">
+<form method="get" class="d-flex gap-2 mb-3" role="search">
+  <input class="form-control" name="q" value="{{ q }}" placeholder="Title, author, ISBN or copy ID" aria-label="Search books">
+  <select class="form-select" name="category" aria-label="Category" style="max-width:14rem"><option value="">All categories</option>{% for c in categories %}<option value="{{ c.pk }}" {% if category and category.pk == c.pk %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <label class="d-flex align-items-center gap-1"><input type="checkbox" name="archived" value="1" {% if archived %}checked{% endif %}> Archived</label>
+  <button class="btn-primary-token" type="submit">Search</button>
+  <a class="btn-primary-token" style="text-decoration:none" href="{% url 'catalogue:edition_create' %}">Add edition</a>
+</form>
+<p><a href="{% url 'catalogue:category_list' %}">Categories</a> · <a href="{% url 'catalogue:layout_list' %}">Label layouts</a> · <a href="{% url 'catalogue:import_start' %}">Import from Excel</a></p>
+<table class="table"><thead><tr><th>Title</th><th>Author</th><th>Category</th><th>ISBN</th></tr></thead><tbody>
+{% for e in page %}<tr><td><a href="{% url 'catalogue:edition_detail' e.pk %}">{{ e.title }}</a></td><td>{{ e.author|default:"—" }}</td><td>{{ e.category.name }}</td><td>{{ e.isbn|default:"—" }}</td></tr>
+{% empty %}<tr><td colspan="4" class="text-muted-token">No books found.</td></tr>{% endfor %}</tbody></table>
+{% include "partials/pagination.html" with qs="q="|add:q|add:"&" %}</div>{% endblock %}

@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block heading %}{{ copy.copy_code }}{% endblock %}
+{% block content %}<div class="card-surface">
+<h1 style="font-family: var(--font-display)">{{ copy.copy_code }}</h1>
+<p><a href="{% url 'catalogue:edition_detail' copy.edition.pk %}">{{ copy.edition.title }}</a> · Condition <strong>{{ copy.get_condition_display }}</strong> · Status <strong>{{ copy.get_status_display }}</strong> · {% if copy.is_issuable %}Issuable{% else %}Not issuable{% endif %}</p>
+{% if copy.status == 'borrowed' %}<p class="text-muted-token">Borrowed copies change state when returned.</p>{% else %}
+<form method="post" novalidate style="max-width:30rem">{% csrf_token %}{% include "partials/form_fields.html" %}<button class="btn-primary-token" type="submit">Update</button></form>{% endif %}
+<h2 class="mt-4">History</h2><ul>{% for e in events %}<li>{{ e.event_date }} — {{ e.get_event_type_display }} {% if e.from_value or e.to_value %}({{ e.from_value }} → {{ e.to_value }}){% endif %} {{ e.note }}</li>{% endfor %}</ul>
+</div>{% endblock %}

@@ -1,0 +1,14 @@
+body { background: var(--bg); color: var(--text); font-family: var(--font-ui); }
+.app-shell { display: flex; min-height: 100vh; }
+.sidebar { width: 15rem; background: var(--sidebar-bg); color: var(--sidebar-text); padding: 1rem 0; flex-shrink: 0; }
+.sidebar .brand { font-family: var(--font-display); font-size: 1.35rem; padding: 0 1.25rem 1rem; }
+.sidebar a, .sidebar span.nav-item { display: block; padding: .55rem 1.25rem; color: var(--sidebar-text); text-decoration: none; }
+.sidebar a:hover, .sidebar a.active { background: rgba(255,255,255,.08); border-left: 3px solid var(--primary); padding-left: calc(1.25rem - 3px); }
+.sidebar span.nav-item { opacity: .5; cursor: not-allowed; }
+.main { flex: 1; min-width: 0; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--border); }
+.content { padding: 1.5rem; }
+.card-surface { background: var(--surface); border: 1px solid var(--border); border-radius: .5rem; padding: 1.25rem; }
+.btn-primary-token { background: var(--primary); color: var(--on-primary); border: 0; border-radius: .375rem; padding: .4rem .9rem; }
+:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.text-muted-token { color: var(--text-muted); }

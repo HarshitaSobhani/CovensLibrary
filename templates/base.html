@@ -1,0 +1,35 @@
+{% load static %}<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ library.library_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'vendor/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <script src="{% static 'js/theme.js' %}"></script>
+</head>
+<body>
+<div class="app-shell">
+  {% if user.is_authenticated %}
+  <nav class="sidebar" aria-label="Main navigation">
+    <div class="brand">{{ library.library_name }}</div>
+    {% include "partials/nav.html" %}
+  </nav>
+  {% endif %}
+  <div class="main">
+    <header class="topbar">
+      <strong>{% block heading %}{{ library.library_name }}{% endblock %}</strong>
+      <div>
+      {% if user.is_authenticated %}<form method="post" action="{% url 'accounts:logout' %}" style="display:inline">{% csrf_token %}<button type="submit" class="btn-primary-token">Sign out</button></form>{% endif %}
+      <button id="theme-toggle" type="button" class="btn-primary-token" aria-label="Toggle light or dark theme">Theme</button>
+      </div>
+    </header>
+    <main class="content">
+      {% if messages %}{% for m in messages %}<div class="card-surface mb-3" role="status">{{ m }}</div>{% endfor %}{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+</body>
+</html>

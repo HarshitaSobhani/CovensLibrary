@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block heading %}Anonymise {{ member.membership_no }}{% endblock %}
+{% block content %}<div class="card-surface" style="max-width:36rem">
+<p><strong>Backups made before anonymisation keep the member's original data until their normal retention expires.</strong> Anonymisation changes the live database only. Financial, loan and audit history stays; the member ID stays.</p>
+<form method="post" novalidate>{% csrf_token %}{% include "partials/form_fields.html" with form=form %}
+<button class="btn-primary-token" type="submit">Anonymise</button></form></div>{% endblock %}

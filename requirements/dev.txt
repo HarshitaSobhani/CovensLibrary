@@ -1,0 +1,4 @@
+-r base.txt
+ruff==0.17.4
+coverage==7.17.2
+python-dotenv==1.2.4

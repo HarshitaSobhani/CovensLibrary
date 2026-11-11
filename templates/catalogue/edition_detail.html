@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block heading %}{{ edition.title }}{% endblock %}
+{% block content %}<div class="card-surface">
+<h1 style="font-family: var(--font-display)">{{ edition.title }}</h1>
+<p>{{ edition.author|default:"Author not recorded" }} · {{ edition.category.name }} · ISBN {{ edition.isbn|default:"—" }}{% if edition.is_archived %} · <strong>Archived</strong>{% endif %}</p>
+<div class="d-flex gap-2 mb-3"><a class="btn-primary-token" style="text-decoration:none" href="{% url 'catalogue:edition_edit' edition.pk %}">Edit</a>
+<a class="btn-primary-token" style="text-decoration:none" href="{% url 'catalogue:copies_add' edition.pk %}">Add copies</a>
+<form method="post" action="{% url 'catalogue:edition_archive' edition.pk %}">{% csrf_token %}<input type="hidden" name="archive" value="{% if edition.is_archived %}0{% else %}1{% endif %}"><button class="btn-primary-token" type="submit">{% if edition.is_archived %}Restore{% else %}Archive{% endif %}</button></form></div>
+<h2>Copies</h2>
+<table class="table"><thead><tr><th>Copy ID</th><th>Condition</th><th>Status</th><th>Shelf</th></tr></thead><tbody>
+{% for c in copies %}<tr><td><a href="{% url 'catalogue:copy_detail' c.pk %}">{{ c.copy_code }}</a></td><td>{{ c.get_condition_display }}</td><td>{{ c.get_status_display }}</td><td>{{ c.shelf_location|default:"—" }}</td></tr>
+{% empty %}<tr><td colspan="4" class="text-muted-token">No copies yet.</td></tr>{% endfor %}</tbody></table>
+{% if copies %}<form method="get" action="{% url 'catalogue:labels_pdf' edition.pk %}" class="d-flex gap-2"><select class="form-select" name="layout" aria-label="Label layout" style="max-width:16rem">{% for l in layouts %}<option value="{{ l.pk }}">{{ l.name }}</option>{% endfor %}</select><button class="btn-primary-token" type="submit">Print labels (PDF)</button></form>{% endif %}
+</div>{% endblock %}

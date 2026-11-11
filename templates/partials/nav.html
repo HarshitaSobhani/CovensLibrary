@@ -1,0 +1,9 @@
+<a href="{% url 'core:dashboard' %}" {% if nav_active == 'dashboard' %}class="active" aria-current="page"{% endif %}>Dashboard</a>
+<a href="{% url 'members:list' %}" {% if nav_active == 'members' %}class="active" aria-current="page"{% endif %}>Members</a>
+<a href="{% url 'catalogue:edition_list' %}" {% if nav_active == 'books' %}class="active" aria-current="page"{% endif %}>Books &amp; Inventory</a>
+<span class="nav-item" aria-disabled="true">Borrowing &amp; Returns</span>
+<span class="nav-item" aria-disabled="true">Subscriptions</span>
+<span class="nav-item" aria-disabled="true">Payments &amp; Tokens</span>
+<span class="nav-item" aria-disabled="true">Reminders</span>
+<span class="nav-item" aria-disabled="true">Reports &amp; Analytics</span>
+<span class="nav-item" aria-disabled="true">Settings</span>
