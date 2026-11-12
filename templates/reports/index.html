@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block heading %}Reports &amp; Analytics{% endblock %}
+{% block content %}
+<div class="card-surface mb-3">
+  <p class="text-muted-token">Each report can be downloaded as CSV or Excel; the two revenue reports and the member statement also as PDF.</p>
+  <ul>
+    {% for key, title in reports %}<li><a href="{% url 'reports:report' key %}">{{ title }}</a></li>{% endfor %}
+  </ul>
+</div>
+<div class="card-surface mb-3">
+  <h2 style="font-size:1.1rem">Member statement</h2>
+  <form method="get" action="{% url 'reports:statement_lookup' %}" class="d-flex gap-2 flex-wrap align-items-end">
+    <div><label for="member_no">Member ID</label><input id="member_no" name="member_no" class="form-control" placeholder="COV-M-000001" required></div>
+    <button class="btn-primary-token" type="submit">Open statement</button>
+  </form>
+</div>
+<div class="card-surface">
+  <h2 style="font-size:1.1rem">Full export</h2>
+  <p class="text-muted-token">A ZIP with one CSV per record type, one Excel workbook and a manifest (row counts and SHA-256 of every file). Amounts are exact paise. Message texts and addresses are not included. The file is created now and is not kept on the server.</p>
+  <form method="post" action="{% url 'reports:export' %}">{% csrf_token %}<button class="btn-primary-token" type="submit">Download full export (ZIP)</button></form>
+</div>
+{% endblock %}

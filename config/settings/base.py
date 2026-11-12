@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "memberships",
     "circulation",
     "communications",
+    "reports",
 ]
 
 MIDDLEWARE = [

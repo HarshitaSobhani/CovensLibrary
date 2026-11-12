@@ -326,7 +326,8 @@ class CsvInjectionTests(Base):
     def test_formula_prefixes_are_neutralised_including_whitespace_variants(self):
         for danger in [
             "=1+1",
-            "+1",
+            "+1+1",
+            "+SUM(A1)",
             "-1",
             "@SUM(A1)",
             "\t=1+1",
@@ -342,6 +343,17 @@ class CsvInjectionTests(Base):
             self.assertTrue(svc._csv_safe(danger).startswith("'"), repr(danger))
         for safe in ["hello", "Row 5", "ok = fine", "12", "", "e-mail"]:
             self.assertEqual(svc._csv_safe(safe), safe, repr(safe))
+        # D-28h: the one shared function exempts only a strict phone-like number (digits, spaces
+        # and dots after a '+'), which can never be a formula
+        self.assertEqual(svc._csv_safe("+919811100077"), "+919811100077")
+        self.assertEqual(svc._csv_safe("+1"), "+1")
+
+    def test_the_import_report_uses_the_shared_spreadsheet_escaper(self):
+        from core import spreadsheet
+
+        self.assertIs(svc._csv_safe, spreadsheet.safe_text)
+        for danger in ["\x00=1", "\u200b=1", "\x1f+1"]:
+            self.assertEqual(svc._csv_safe(danger), "'" + danger)
 
     def test_error_report_applies_it_to_every_cell(self):
         batch, _ = self.stage([row(Title="+evil()", Category="@Cat", Author="-x")])

@@ -15,6 +15,7 @@ from openpyxl import Workbook, load_workbook
 from audit.services import record
 from core.errors import RuleViolation
 from core.money import MAX_PAISE
+from core.spreadsheet import safe_text
 
 from . import services
 from .models import Acquisition, BookCopy, BookEdition, Category, ImportBatch, ImportRow
@@ -616,13 +617,8 @@ def _run_import(batch, rows, summary, actor):
     return batch
 
 
-def _csv_safe(value):
-    """Neutralise spreadsheet formulas, including ones hidden behind tabs, CR/LF or whitespace."""
-    text = str(value)
-    stripped = text.lstrip(" \t\r\n\u00a0\ufeff\u200b")
-    if text[:1] in ("\t", "\r", "\n") or stripped[:1] in ("=", "+", "-", "@"):
-        return "'" + text
-    return text
+# One shared implementation (core.spreadsheet); the old name stays for the existing tests.
+_csv_safe = safe_text
 
 
 def error_report_csv(batch):

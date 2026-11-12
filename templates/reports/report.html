@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block heading %}{{ report.title }}{% endblock %}
+{% block content %}
+<div class="card-surface mb-3">
+  <form method="get" class="d-flex gap-2 flex-wrap align-items-end">
+    <div><label for="preset">Period</label>
+      <select id="preset" name="preset" class="form-select">{% for k, v in presets.items %}<option value="{{ k }}" {% if k == preset %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div><label for="start">From</label><input id="start" type="date" name="start" value="{{ start|date:'Y-m-d' }}" class="form-control"></div>
+    <div><label for="end">To</label><input id="end" type="date" name="end" value="{{ end|date:'Y-m-d' }}" class="form-control"></div>
+    <button class="btn-primary-token" type="submit">Show</button>
+  </form>
+  {% if error %}<p class="text-danger mt-2" role="alert">{{ error }}</p>{% endif %}
+  <p class="mt-3 mb-1"><strong>{{ label }}:</strong> {{ report.subtitle }}</p>
+  <p class="mb-0">Download:
+    <a href="?preset={{ preset }}&start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}&format=csv">CSV</a> ·
+    <a href="?preset={{ preset }}&start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}&format=xlsx">Excel</a>
+    {% if has_pdf %}· <a href="?preset={{ preset }}&start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}&format=pdf">PDF</a>{% endif %}
+  </p>
+</div>
+{% for item in sections %}
+<section class="card-surface mb-3">
+  <h2 style="font-size:1.1rem">{{ item.section.title }}</h2>
+  {% if item.section.note %}<p class="text-muted-token">{{ item.section.note }}</p>{% endif %}
+  {% if item.rows %}
+  <div style="overflow-x:auto"><table class="table table-sm"><thead><tr>{% for c in item.section.columns %}<th>{{ c.label }}</th>{% endfor %}</tr></thead><tbody>
+  {% for row in item.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+  {% if item.total %}<tr><th>{{ item.total.0 }}</th>{% for cell in item.total|slice:"1:" %}<th>{{ cell }}</th>{% endfor %}</tr>{% endif %}
+  </tbody></table></div>
+  {% else %}<p class="text-muted-token mb-0">No records.</p>{% endif %}
+</section>
+{% endfor %}
+{% if report.notes %}<div class="card-surface"><ul class="mb-0 small">{% for n in report.notes %}<li>{{ n }}</li>{% endfor %}</ul></div>{% endif %}
+{% endblock %}

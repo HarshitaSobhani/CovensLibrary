@@ -5,6 +5,6 @@
 <a href="{% url 'memberships:register' %}" {% if nav_active == 'register' %}class="active"{% endif %}>Register a member</a>
 <span class="nav-item" aria-disabled="true">Payments &amp; Tokens</span>
 <a href="{% url 'communications:list' %}" {% if nav_active == 'reminders' %}class="active" aria-current="page"{% endif %}>Reminders</a>
-<span class="nav-item" aria-disabled="true">Reports &amp; Analytics</span>
+<a href="{% url 'reports:index' %}" {% if nav_active == 'reports' %}class="active" aria-current="page"{% endif %}>Reports &amp; Analytics</a>
 <a href="{% url 'core:calendar' %}" {% if nav_active == 'calendar' %}class="active" aria-current="page"{% endif %}>Calendar</a>
 <a href="{% url 'core:settings' %}" {% if nav_active == 'settings' %}class="active" aria-current="page"{% endif %}>Settings</a>

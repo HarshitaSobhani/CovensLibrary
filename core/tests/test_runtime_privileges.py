@@ -356,6 +356,12 @@ owner = User.objects.create_user("owner", email="o@example.com", password="Corre
 c = Client()
 out["login"] = c.post("/accounts/login/", {"username": "owner", "password": "Correct-Horse-9!"}).status_code
 out["dashboard"] = c.get("/").status_code
+out["phase6"] = [
+    c.get("/reports/").status_code,
+    c.get("/reports/collections/?preset=year").status_code,
+    c.get("/reports/allocation/?preset=year&format=pdf").status_code,
+    c.get("/reports/adjustments/?preset=year&format=xlsx").status_code,
+]
 out["phase5a"] = [
     c.get("/calendar/").status_code,
     c.get("/search/?q=asha").status_code,
@@ -376,6 +382,10 @@ batch = svc.stage_import(SimpleUploadedFile("b.xlsx", b.getvalue()), actor=owner
 svc.set_options(batch, create_missing_categories=False, copy_id_mode="generate", isbn_warnings_acknowledged=True)
 svc.execute_import(batch, actor=owner)
 out["member"] = m.membership_no
+out["phase6b"] = [
+    c.get(f"/reports/statement/{m.pk}/?format=pdf").status_code,
+    c.post("/reports/export/")["Content-Type"],
+]
 out["copies"] = sum(1 for _ in cs.search_editions("", False).values_list("copies"))
 out["pdf"] = c.get(f"/books/{e.pk}/labels.pdf").status_code
 try:
@@ -514,6 +524,8 @@ print("RESULT" + json.dumps(out))
         self.assertEqual(result["current_user"], RUNTIME)
         self.assertEqual((result["login"], result["dashboard"], result["pdf"]), (302, 200, 200))
         self.assertEqual(result["phase5a"], [200, 200, 200, 302, 302, 200])
+        self.assertEqual(result["phase6"], [200, 200, 200, 200])
+        self.assertEqual(result["phase6b"], [200, "application/zip"])
         self.assertEqual(result["member"], "COV-M-000001")
         self.assertEqual(result["tamper"], "denied")
         self.assertEqual(result["delete_members"], "denied")
