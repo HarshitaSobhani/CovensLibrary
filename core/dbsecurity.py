@@ -61,6 +61,16 @@ TABLE_POLICIES = {
     "catalogue_labellayout": MUTABLE,
     "catalogue_importbatch": MUTABLE,
     "catalogue_importrow": MUTABLE,
+    # --- memberships
+    "memberships_subscriptionplan": NO_DELETE,  # plans are edited, never deleted
+    "memberships_membersubscription": NO_DELETE,  # only a one-time cancellation may update it
+    # --- finance (immutable ledger)
+    "finance_financialtransaction": APPEND_ONLY,
+    "finance_paymententry": APPEND_ONLY,
+    "finance_receiptdocument": APPEND_ONLY,
+    "finance_tokenaccount": APPEND_ONLY,
+    "finance_tokencycle": APPEND_ONLY,
+    "finance_tokenledgerentry": APPEND_ONLY,
     # --- Django framework tables (written only by migrations, i.e. by the owner)
     "django_migrations": READ_ONLY,
     "django_content_type": READ_ONLY,
@@ -75,6 +85,17 @@ REQUIRED_TRIGGERS = {
     "audit_auditevent": ("audit_event_append_only",),
     "catalogue_copyevent": ("catalogue_copyevent_append_only",),
     "members_member": ("members_member_no_immutable",),
+    "memberships_membersubscription": ("memberships_subscription_guard",),
+    "finance_financialtransaction": (
+        "finance_financialtransaction_append_only",
+        "finance_txn_payment_sum",
+        "finance_txn_correction_rules",
+    ),
+    "finance_paymententry": ("finance_paymententry_append_only", "finance_entry_payment_sum"),
+    "finance_receiptdocument": ("finance_receiptdocument_append_only",),
+    "finance_tokenaccount": ("finance_tokenaccount_append_only",),
+    "finance_tokencycle": ("finance_tokencycle_append_only",),
+    "finance_tokenledgerentry": ("finance_tokenledgerentry_append_only", "finance_token_balance"),
 }
 
 ROLE_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")

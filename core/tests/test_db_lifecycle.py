@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from unittest import skipUnless
@@ -57,7 +58,8 @@ class MigrationLifecycleTests(TransactionTestCase):
         self.assertEqual(one("SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal"), 0)
 
         call_command("migrate", verbosity=0)  # forward, as owner: post_migrate re-applies grants
-        self.assertEqual(one("SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal"), 3)
+        expected = sum(len(names) for names in dbs.REQUIRED_TRIGGERS.values())
+        self.assertEqual(one("SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal"), expected)
         self.assertEqual(dbs.inspect(connection, RUNTIME, "owner"), [])
         self.assertTrue(runtime_has("audit_auditevent", "INSERT"))
         self.assertFalse(runtime_has("audit_auditevent", "UPDATE"))
@@ -173,12 +175,7 @@ class BackupRestoreTests(TransactionTestCase):
                     ).fetchall()
                 }
                 self.assertEqual(
-                    triggers,
-                    {
-                        "audit_event_append_only",
-                        "catalogue_copyevent_append_only",
-                        "members_member_no_immutable",
-                    },
+                    triggers, {name for names in dbs.REQUIRED_TRIGGERS.values() for name in names}
                 )
                 # 3. re-apply the grants as the owner and verify against the policy
                 dbs.apply_grants(_Adapter(owner_conn), RUNTIME)
@@ -201,7 +198,16 @@ class BackupRestoreTests(TransactionTestCase):
             finally:
                 rt.close()
         finally:
-            admin.execute(f'DROP DATABASE IF EXISTS "{target}" WITH (FORCE)')
+            # The runtime session closed just above may still be shutting down on the server;
+            # FORCE cannot terminate another role's session, so wait for it to disappear.
+            for _ in range(50):
+                try:
+                    admin.execute(f'DROP DATABASE IF EXISTS "{target}" WITH (FORCE)')
+                    break
+                except (psycopg.errors.InsufficientPrivilege, psycopg.errors.ObjectInUse):
+                    time.sleep(0.2)
+            else:  # pragma: no cover
+                admin.execute(f'DROP DATABASE IF EXISTS "{target}"')
             admin.close()
 
     def test_restore_with_privileges_in_the_dump(self):

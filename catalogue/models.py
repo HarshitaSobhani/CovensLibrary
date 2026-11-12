@@ -4,6 +4,7 @@ from django.db.models.functions import Lower
 from django.utils import timezone
 
 from core.errors import RuleViolation
+from core.money import MAX_PAISE
 
 
 class Category(models.Model):
@@ -59,8 +60,17 @@ class Acquisition(models.Model):
     donor_name = models.CharField(max_length=200, blank=True)
     donor_contact = models.CharField(max_length=200, blank=True)
     acquired_on = models.DateField(null=True, blank=True)
-    unit_cost_paise = models.PositiveIntegerField(null=True, blank=True)
+    unit_cost_paise = models.PositiveBigIntegerField(null=True, blank=True)
     notes = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(unit_cost_paise__isnull=True)
+                | models.Q(unit_cost_paise__lte=MAX_PAISE),
+                name="acquisition_cost_within_limit",
+            )
+        ]
 
     def __str__(self):
         return f"{self.edition_id} {self.source}"

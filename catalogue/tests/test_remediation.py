@@ -94,9 +94,13 @@ class NumericValidationTests(Base):
 
     def test_cost_boundary(self):
         _, rows = self.stage(
-            [row(**{"Unit Cost (INR)": "21474836.47"}), row(**{"Unit Cost (INR)": "21474836.48"})]
+            [
+                row(**{"Unit Cost (INR)": "49999.00"}),  # the shared maximum (core.money, D-16)
+                row(**{"Unit Cost (INR)": "49999.01"}),
+                row(**{"Unit Cost (INR)": "21474836.48"}),
+            ]
         )
-        self.assertEqual([r.is_valid for r in rows], [True, False])
+        self.assertEqual([r.is_valid for r in rows], [True, False, False])
 
 
 class LengthValidationTests(Base):

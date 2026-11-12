@@ -5,6 +5,7 @@ from django.utils import timezone
 from audit.services import record
 from core.errors import RuleViolation
 from core.http import clean_query
+from core.money import clean_reason
 from core.sequences import next_value
 
 from .models import Member
@@ -163,6 +164,7 @@ def reactivate_member(member, *, actor, mode):
 
 
 @transaction.atomic
+@transaction.atomic
 def anonymise_member(member, *, actor, reason, confirm):
     """Clear personal data in the live database only; history and the member ID remain.
 
@@ -170,10 +172,13 @@ def anonymise_member(member, *, actor, reason, confirm):
     """
     if not confirm:
         raise RuleViolation("confirmation_required", "Explicit confirmation is required.")
-    if not (reason or "").strip():
-        raise RuleViolation("reason_required", "A reason is required.")
-    if member.anonymised_at:
+    reason = clean_reason(reason, "A reason", required=True)
+    # Lock the member row first, like every payment, token and subscription operation, so this
+    # cannot interleave with one in flight; then work on the fresh row, not a stale object.
+    locked = Member.objects.select_for_update().get(pk=member.pk)
+    if locked.anonymised_at:
         raise RuleViolation("member_anonymised", "The member is already anonymised.")
+    member.refresh_from_db()
     member.full_name = "Anonymised member"
     member.mobile_e164 = f"anon-{member.membership_no}"
     member.email = ""
@@ -186,7 +191,7 @@ def anonymise_member(member, *, actor, reason, confirm):
         actor=actor,
         entity_type="member",
         entity_id=member.membership_no,
-        summary={"reason": reason.strip()},
+        summary={"reason": reason},
     )
 
 

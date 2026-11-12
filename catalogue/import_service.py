@@ -14,6 +14,7 @@ from openpyxl import Workbook, load_workbook
 
 from audit.services import record
 from core.errors import RuleViolation
+from core.money import MAX_PAISE
 
 from . import services
 from .models import Acquisition, BookCopy, BookEdition, Category, ImportBatch, ImportRow
@@ -26,7 +27,7 @@ MAX_SCAN_ROWS = 10000  # physical rows read (stops runaway empty/formatted rows)
 MAX_COLS = 60
 MAX_COPIES_PER_ROW = 100
 MAX_LONG_TEXT = 5000  # Description / Notes are unbounded in the database; capped defensively
-MAX_COST_PAISE = 2_147_483_647  # PositiveIntegerField limit (about INR 21,474,836.47)
+MAX_COST_PAISE = MAX_PAISE  # shared 64-bit-backed limit (core/money.py)
 GENERATED_CODE = re.compile(r"^COV-C-\d+$")  # reserved for generated copy IDs
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 

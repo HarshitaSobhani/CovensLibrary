@@ -14,7 +14,7 @@ Decision: two PostgreSQL roles on Mac and Windows; `postgres` stays break-glass.
 |---|---|---|---|
 | Create roles, create database, `provision_roles.sql` | yes | no | no |
 | Convert an existing database (`convert_existing_database.sql`) | yes | no | no |
-| `CREATE EXTENSION btree_gist` (trusted ext., PG 13+) | yes | yes | **no** |
+| `CREATE EXTENSION btree_gist` (trusted ext., PG 13+; created by the memberships migration, as the owner) | yes | yes | **no** |
 | `migrate`, `apply_db_grants`, restore (`pg_restore`) | yes (avoid) | **yes** | no |
 | `check_db_security`, `pg_dump` (backup) | yes | yes | **yes** |
 | Run the web app, scheduled commands, `create_owner`, recovery CLI | no | no | **yes** |
@@ -26,11 +26,11 @@ Every table must appear in `TABLE_POLICIES`. An unclassified table gets **no** r
 | Class | Runtime privileges | Tables |
 |---|---|---|
 | MUTABLE | SELECT, INSERT, UPDATE, DELETE | accounts_loginevent, accounts_recoverycode, core_idsequence, catalogue_category, catalogue_acquisition, catalogue_labellayout, catalogue_importbatch, catalogue_importrow, django_session |
-| NO_DELETE | SELECT, INSERT, UPDATE | accounts_user, core_librarysetting, members_member, catalogue_bookedition, catalogue_bookcopy |
-| APPEND_ONLY | SELECT, INSERT | audit_auditevent, catalogue_copyevent |
+| NO_DELETE | SELECT, INSERT, UPDATE | memberships_subscriptionplan, memberships_membersubscription (only a one-time cancellation may update it; trigger-guarded), accounts_user, core_librarysetting, members_member, catalogue_bookedition, catalogue_bookcopy |
+| APPEND_ONLY | SELECT, INSERT | finance_financialtransaction, finance_paymententry, finance_receiptdocument, finance_tokenaccount, finance_tokencycle, finance_tokenledgerentry, audit_auditevent, catalogue_copyevent |
 | READ_ONLY | SELECT | accounts_user_groups, accounts_user_user_permissions, django_migrations, django_content_type, auth_* |
 
-Never granted: TRUNCATE, REFERENCES, TRIGGER, sequence UPDATE. Sequences: USAGE+SELECT (SELECT only on READ_ONLY tables, so `pg_dump` works). Append-only triggers (`audit_event_append_only`, `catalogue_copyevent_append_only`, `members_member_no_immutable`) stay; the runtime role cannot alter, disable or drop them or replace their functions. Trigger functions pin `search_path = pg_catalog` (core.0002).
+Never granted: TRUNCATE, REFERENCES, TRIGGER, sequence UPDATE. Sequences: USAGE+SELECT (SELECT only on READ_ONLY tables, so `pg_dump` works). Phase 3 adds `finance_txn_correction_rules` (corrections rules, D-7), `finance_txn_payment_sum`, `finance_token_balance` and `memberships_subscription_guard`, all verified by `check_db_security`. Append-only triggers (`audit_event_append_only`, `catalogue_copyevent_append_only`, `members_member_no_immutable`) stay; the runtime role cannot alter, disable or drop them or replace their functions. Trigger functions pin `search_path = pg_catalog` (core.0002).
 
 ## Settings and credentials
 - `DB_SECURITY_MODE=strict` (default). `single_role_dev` is development/test only; production refuses it.
@@ -83,3 +83,13 @@ After any restore, run `apply_db_grants` and both `check_db_security` runs; rest
 - `.env.owner` on a development Mac is a plaintext file (0600, git-ignored). Windows: keep owner password out of the machine except during upgrades.
 - Trigger-based append-only rules bind the owner role too, but the owner can drop them; owner use is limited to migrations.
 - Windows 11 runtime is untested until Phase 7c.
+
+## Phase 3 remediation migrations: verification notes
+Read-only inspection of `finance.0005`, `memberships.0005`, `core.0003`, `catalogue.0003` and `finance.0006` (migration SQL via `sqlmigrate`, PostgreSQL catalog queries, and a rolled-back behavioural probe on a disposable database):
+
+- **Types and limits.** All eight paise columns are `bigint` (`finance_financialtransaction.amount_paise`, `finance_paymententry.amount_paise`, `finance_tokencycle.amount_snapshot_paise`, `finance_tokenledgerentry.delta_paise`, `memberships_subscriptionplan.price_paise`, `memberships_membersubscription.price_paise_snapshot`, `core_librarysetting.token_amount_paise`, `catalogue_acquisition.unit_cost_paise`). Each has a CHECK with the single maximum 4,999,900 paise (Rs 49,999.00, D-16; the token ledger delta is bounded on both sides, the unit cost allows NULL). The checks were first created at 9,999,999,999 (`*.0005`) and replaced by the D-16 limit in `finance.0007`, `memberships.0006`, `core.0004` and `catalogue.0004` (each drops and re-adds the same-named constraints; the columns stay `bigint`). Applying them fails if any stored amount exceeds Rs 49,999.00; reversing them restores the earlier, wider limit and is always safe. No other money column exists.
+- **Nothing else changed.** Every named constraint, index, foreign key and unique constraint declared by the models still exists on the migrated database; owners, privileges, classifications and the trigger list are unchanged apart from the new `finance_txn_correction_rules`. `ALTER COLUMN ... TYPE bigint` rewrites a table without firing row triggers, so the append-only and guard triggers are not involved.
+- **Order.** `finance.0005 -> finance.0006`; `memberships.0005` depends on `finance.0005`; `core.0003` follows `core.0002`; `catalogue.0003` follows `catalogue.0002`.
+- **Reversal.** Each of the four widening migrations is reversible (drop the checks, then `ALTER COLUMN ... TYPE integer`). **Reversal fails with "integer out of range" as soon as any stored value exceeds 2,147,483,647 paise**, and is only safe while all amounts fit in 32 bits (as on the development database today). `finance.0006` reverses by dropping its trigger and function.
+- **`finance_txn_correction_rules`.** BEFORE INSERT on `finance_financialtransaction` (updates are already refused by the append-only trigger), owned by `coven_owner`, `search_path=pg_catalog`, not SECURITY DEFINER, default PUBLIC EXECUTE (harmless: calling a trigger function directly is refused). It refuses a reversal of a subscription payment, a paid refund or a reversal, and a money-out adjustment that references a subscription payment, for every role including the owner. `coven_app` cannot disable, drop, replace or alter it, cannot change `session_replication_role`, and has only SELECT and INSERT on the six append-only finance tables. Limits: the owner role can still disable triggers or TRUNCATE (accepted L6 decision), and the database cannot see the owner's "not a fee refund" confirmation (service rule; stored in the audit event).
+

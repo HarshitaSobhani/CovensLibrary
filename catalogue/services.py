@@ -6,6 +6,7 @@ from django.utils import timezone
 from audit.services import record
 from core.errors import RuleViolation
 from core.http import clean_query
+from core.money import check_amount
 from core.sequences import next_value
 
 from .models import Acquisition, BookCopy, BookEdition, Category, CopyEvent
@@ -237,6 +238,8 @@ def add_copies(
         raise RuleViolation("count_invalid", "Add at least one copy.")
     if source not in Acquisition.Source.values:
         raise RuleViolation("source_invalid", "Choose purchased or donated.")
+    if unit_cost_paise is not None:
+        check_amount(unit_cost_paise, "The unit cost")
     if codes is not None:
         if len(codes) != count:
             raise RuleViolation("codes_count", "Supply exactly one copy ID per copy.")

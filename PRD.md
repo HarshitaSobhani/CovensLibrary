@@ -113,13 +113,15 @@ Plans are configurable for future subscriptions; existing records keep their pla
 - Early renewal starts on the current subscription's first expired day. Late renewal starts on the **owner-entered activation date**.
 - A subscription must be fully paid before activation; no outstanding-balance workflow exists.
 - **Subscription fees are non-refundable**, including early cancellation: no refund, no prorated or unused-period amount, no credit.
-- Renewal is blocked while the member's current token cycle is forfeited. The existing subscription stays valid, but new borrowing is suspended until a fresh ₹500 token is paid (§6.6).
+- Renewal requires a held token. It is blocked while the current token cycle is forfeited (the existing subscription stays valid, but new borrowing is suspended until a fresh ₹500 token is paid, §6.6), and a refunded or reversed token does not satisfy it either: a fresh token is collected first.
+- A subscription start date before today is a backdated operation and needs a reason and an additional owner confirmation.
+- Plan prices and durations are intended to be editable for future subscriptions only; the editing screen is deferred to the settings phase (the two plans are seeded until then).
 - Expiry reminders are emailed automatically and appear on the dashboard.
 - Existing loans stay visible after expiry and must be resolved before token refund or membership closure.
 
 ### 6.6 Refundable security token
 - ₹500, collected once per **token cycle** (first joining, and again on each rejoining), separate from subscription revenue, carried forward across ordinary renewals.
-- Refunded on eligible exit (cash or UPI, with optional reference) when no book is outstanding and the token has not been forfeited. No partial refund. A forfeited token is never refundable or automatically restored.
+- Refunded on eligible exit (cash or UPI, with optional reference) when no book is outstanding and the token has not been forfeited. No partial refund. An eligible full refund remains possible after the member is anonymised; anonymisation never restores borrowing or renewal. A forfeited token is never refundable or automatically restored.
 - Separate immutable ledger entries represent collection, carry-forward, refund and forfeiture; corrections are reversals/adjustments.
 - Token collection is not revenue; forfeitures and refunds are reported separately.
 
@@ -148,7 +150,9 @@ Plans are configurable for future subscriptions; existing records keep their pla
 - Every financial transaction has a **globally unique internal transaction ID (UUID)**.
 - **Separate human-readable receipt sequences, each numbered per calendar year:** subscription payments `SUB-YYYY-000001`, token collections `TOK-YYYY-000001`, token refunds `REF-YYYY-000001`, financial adjustments `ADJ-YYYY-000001`. Forfeitures and reversals create their own immutable transaction records (UUID plus a link to the original); no customer receipt is defined for them. A combined registration printout shows both the subscription receipt and the token-collection receipt. Receipt numbers use the **calendar year (January–December, Asia/Kolkata) of the receipt issuance date**; a backdated payment or effective date never changes the receipt-number year. Example: payment effective date 31 Dec 2026, receipt issued 5 Jan 2027 → `SUB-2027-…`.
 - Receipts: PDF and print-friendly, with library branding, member ID/name, dates, plan and duration, subscription and token amounts shown separately, payment methods and amounts, notes.
-- Financial records are never edited or deleted. Corrections are reversals or adjustments carrying date/time, amount, type, reason, actor, and a link to the original.
+- Financial records are never edited or deleted. Corrections are reversals or adjustments carrying date/time, amount, type, reason, actor, and a link to the original. Subscription payments and paid token refunds cannot be reversed; a recording error is corrected by an owner-approved adjustment. **An adjustment is never a way to refund a subscription fee**: money-out adjustments need the owner's explicit confirmation that they are not a fee refund and cannot reference a subscription payment. An **unlinked cash-out adjustment** is allowed only as an explicit owner-approved accounting correction with a mandatory reason; it records the owner, timestamp and amount, and the financial reports list such adjustments separately and never as fee refunds.
+- Limits (owner decision D-16): the largest single amount (including a book's unit cost) is ₹49,999.00; a reason or note may have at most 2,000 characters. Anything above is rejected with a clear message (never shortened or overflowed).
+- Receipts store the permanent member ID, not the name (the name is shown live, so anonymisation applies); UPI references are kept for financial reconciliation and are visible only to the logged-in owner.
 - Transaction date is distinct from recorded timestamp.
 
 ### 6.9 Revenue and financial reports

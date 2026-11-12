@@ -1,5 +1,7 @@
 from django.db import models
 
+from .money import MAX_PAISE
+
 
 class LibrarySetting(models.Model):
     """Singleton settings row (id is always 1). Changing it never rewrites history."""
@@ -12,7 +14,7 @@ class LibrarySetting(models.Model):
     logo_file = models.CharField(max_length=200, blank=True)
     loan_days = models.PositiveSmallIntegerField(default=30)
     grace_days = models.PositiveSmallIntegerField(default=7)
-    token_amount_paise = models.PositiveIntegerField(default=50000)
+    token_amount_paise = models.PositiveBigIntegerField(default=50000)
     issue_block_days = models.PositiveSmallIntegerField(default=15)
     receipt_footer = models.CharField(max_length=300, blank=True)
     backup_time = models.TimeField(null=True, blank=True)
@@ -24,6 +26,10 @@ class LibrarySetting(models.Model):
             models.CheckConstraint(condition=models.Q(loan_days__gt=0), name="loan_days_positive"),
             models.CheckConstraint(
                 condition=models.Q(token_amount_paise__gt=0), name="token_amount_positive"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(token_amount_paise__lte=MAX_PAISE),
+                name="token_amount_within_limit",
             ),
         ]
 

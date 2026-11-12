@@ -1,0 +1,25 @@
+{% load money %}
+<div class="card-surface mt-3">
+  <h2 style="font-family: var(--font-display); font-size:1.2rem">Membership and token</h2>
+  <p><strong>Token:</strong> {{ token_text }}{% if cycle %} (cycle {{ cycle.cycle_no }}, {{ cycle.amount_snapshot_paise|rupees }}){% endif %}</p>
+  {% if not member.anonymised_at %}
+  <div class="d-flex gap-2 flex-wrap mb-2">
+    {% if token_state != 'held' %}<a class="btn-primary-token" style="text-decoration:none" href="{% url 'memberships:fresh_token' member.pk %}">Collect token</a>{% endif %}
+    {% if token_state == 'held' %}<a class="btn-primary-token" style="text-decoration:none" href="{% url 'finance:refund' member.pk %}">Refund token…</a>{% endif %}
+    <a class="btn-primary-token" style="text-decoration:none" href="{% url 'finance:adjust' member.pk %}">Adjustment…</a>
+    {% if not renewal_blockers %}<a class="btn-primary-token" style="text-decoration:none" href="{% url 'memberships:renew' member.pk %}">Renew / add subscription</a>{% endif %}
+  </div>
+  {% for code, text in renewal_blockers %}<div class="small text-muted-token">Renewal: {{ text }}</div>{% endfor %}
+  {% if borrowing_blockers %}<div class="small text-muted-token">New borrowing is blocked: {% for code, text in borrowing_blockers %}{{ text }} {% endfor %}</div>{% endif %}
+  {% endif %}
+  <h3 class="mt-3" style="font-size:1rem">Subscriptions</h3>
+  <table class="table table-sm"><thead><tr><th>Plan</th><th>Starts (inclusive)</th><th>Last valid day</th><th>First expired day</th><th>Status</th><th>Receipt</th><th></th></tr></thead><tbody>
+  {% for sub, state in rows %}<tr><td>{{ sub.plan_name_snapshot }} ({{ sub.price_paise_snapshot|rupees }})</td><td>{{ sub.starts_on|date:"d M Y" }}</td><td>{{ sub.last_valid_day|date:"d M Y" }}</td><td>{{ sub.expires_on|date:"d M Y" }}</td><td>{{ state|capfirst }}</td><td>{% if sub.payment_txn.receipt_document_id %}<a href="{% url 'finance:receipt' sub.payment_txn.receipt_document_id %}">{{ sub.payment_txn.receipt_no }}</a>{% endif %}</td><td>{% if state != 'cancelled' and not member.anonymised_at %}<a href="{% url 'memberships:cancel' sub.pk %}">Cancel…</a>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="7">No subscriptions yet.</td></tr>{% endfor %}
+  </tbody></table>
+  <h3 class="mt-3" style="font-size:1rem">Financial records</h3>
+  <table class="table table-sm"><thead><tr><th>Date</th><th>Kind</th><th>Amount</th><th>Receipt</th><th>Internal ID</th><th></th></tr></thead><tbody>
+  {% for t in transactions %}<tr><td>{{ t.effective_date|date:"d M Y" }}</td><td>{{ t.get_kind_display }}{% if t.cash_flow == 'out' %} (out){% endif %}</td><td>{{ t.amount_paise|rupees }}</td><td>{% if t.receipt_document_id %}<a href="{% url 'finance:receipt' t.receipt_document_id %}">{{ t.receipt_no }}</a>{% else %}—{% endif %}</td><td class="small">{{ t.internal_txn_id }}</td><td>{% if t.can_reverse %}<a href="{% url 'finance:reverse' t.pk %}">Reverse…</a>{% elif t.reversed_by_id %}reversed{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="6">None yet.</td></tr>{% endfor %}
+  </tbody></table>
+</div>

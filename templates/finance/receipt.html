@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% load money %}{% block heading %}Receipt{% endblock %}
+{% block content %}
+<div class="card-surface receipt" style="max-width:42rem">
+  <h1 style="font-family: var(--font-display); font-size:1.4rem">{{ snap.library.name }}</h1>
+  <div class="small text-muted-token">{{ snap.library.address }} {{ snap.library.phone }} {{ snap.library.email }}</div>
+  <p class="mt-3"><strong>{{ snap.membership_no }}</strong> {{ document.member.full_name }}<br>Date: {{ document.document_date|date:"d M Y" }}</p>
+  {% for line in snap.lines %}
+  <section class="mb-3">
+    <h2 style="font-size:1.05rem">{{ line.receipt_no }} — {{ line.label }}: {{ line.amount_paise|rupees }}</h2>
+    {% for key, value in line.detail.items %}<div class="small">{{ key|capfirst }}: {{ value }}</div>{% endfor %}
+    <table class="table table-sm"><thead><tr><th>Method</th><th>Amount</th><th>Paid on</th><th>Reference</th></tr></thead><tbody>
+    {% for p in line.payments %}<tr><td>{{ p.method|upper }}</td><td>{{ p.amount_paise|rupees }}</td><td>{{ p.paid_on }}</td><td>{{ p.reference|default:"—" }}</td></tr>{% endfor %}
+    </tbody></table>
+    <div class="small text-muted-token">Transaction ID {{ line.internal_txn_id }}</div>
+  </section>
+  {% endfor %}
+  {% if snap.notes %}<p>{{ snap.notes }}</p>{% endif %}
+  <p class="small">{{ snap.library.footer }}</p>
+  <div class="d-flex gap-2 no-print">
+    <a class="btn-primary-token" style="text-decoration:none" href="{% url 'finance:receipt_pdf' document.pk %}">Download PDF</a>
+    <button class="btn-primary-token" type="button" onclick="window.print()">Print</button>
+    <a href="{% url 'members:detail' document.member_id %}">Back to member</a>
+  </div>
+</div>
+<style>@media print { .sidebar, .topbar, .no-print { display:none !important; } .card-surface { border:0; } }</style>
+{% endblock %}

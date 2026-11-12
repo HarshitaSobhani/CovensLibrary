@@ -3,6 +3,7 @@ from django.db import transaction
 
 from core.errors import RuleViolation
 from core.forms import BootstrapFormMixin
+from core.money import MAX_RUPEES
 
 from . import services
 from .models import Acquisition, BookCopy, BookEdition, Category, LabelLayout
@@ -61,7 +62,12 @@ class CopiesForm(BootstrapFormMixin, forms.Form):
     donor_name = forms.CharField(required=False, max_length=200)
     acquired_on = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     unit_cost_rupees = forms.DecimalField(
-        required=False, min_value=0, decimal_places=2, label="Unit cost (₹)"
+        required=False,
+        min_value=0,
+        max_value=MAX_RUPEES,
+        max_digits=10,
+        decimal_places=2,
+        label="Unit cost (₹)",
     )
     shelf_location = forms.CharField(required=False, max_length=80)
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))

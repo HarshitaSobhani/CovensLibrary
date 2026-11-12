@@ -3,6 +3,7 @@ from django.utils import timezone
 
 from core.errors import RuleViolation
 from core.forms import BootstrapFormMixin
+from core.money import MAX_REASON_LENGTH
 
 from . import services
 
@@ -45,7 +46,7 @@ class MemberForm(BootstrapFormMixin, forms.Form):
 
 
 class AnonymiseForm(BootstrapFormMixin, forms.Form):
-    reason = forms.CharField(widget=forms.Textarea(attrs={"rows": 2}))
+    reason = forms.CharField(max_length=MAX_REASON_LENGTH, widget=forms.Textarea(attrs={"rows": 2}))
     confirm = forms.BooleanField(
         label="I understand this clears the member's personal data permanently in the live database"
     )

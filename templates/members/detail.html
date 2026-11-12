@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block heading %}{{ member.membership_no }}{% endblock %}
+{% extends "base.html" %}{% load membership_panel %}{% block heading %}{{ member.membership_no }}{% endblock %}
 {% block content %}
 <div class="card-surface">
   <h1 style="font-family: var(--font-display)">{{ member.full_name }}</h1>
@@ -29,4 +29,5 @@
   {% endif %}
   {% endif %}
 </div>
+{% membership_panel member %}
 {% endblock %}

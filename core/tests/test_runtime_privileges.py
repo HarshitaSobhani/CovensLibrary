@@ -49,6 +49,12 @@ class RuntimePrivilegeTests(TransactionTestCase):
     def setUp(self):
         self.rt = runtime_connection()
         self.addCleanup(self.rt.close)
+        # flushes between TransactionTestCases remove the migration-seeded plans
+        owner_sql(
+            "INSERT INTO memberships_subscriptionplan (code, name, duration_months, price_paise, "
+            "is_active) VALUES ('6m','6-month subscription',6,80000,true),"
+            "('12m','12-month subscription',12,150000,true) ON CONFLICT (code) DO NOTHING"
+        )
         # a user, member, edition, copy and an audit row created by the OWNER connection
         owner_sql(
             "INSERT INTO members_member (membership_no, full_name, mobile_e164, email, joined_on, "
@@ -152,7 +158,16 @@ class RuntimePrivilegeTests(TransactionTestCase):
 
     # ---- append-only tables ---------------------------------------------------------------
     def test_append_only_tables_reject_update_delete_and_truncate(self):
-        for table in ("audit_auditevent", "catalogue_copyevent"):
+        for table in (
+            "audit_auditevent",
+            "catalogue_copyevent",
+            "finance_financialtransaction",
+            "finance_paymententry",
+            "finance_receiptdocument",
+            "finance_tokenaccount",
+            "finance_tokencycle",
+            "finance_tokenledgerentry",
+        ):
             self.assertDenied(f"UPDATE {table} SET id = id")
             self.assertDenied(f"DELETE FROM {table}")
             self.assertDenied(f"TRUNCATE {table}")
@@ -170,6 +185,10 @@ class RuntimePrivilegeTests(TransactionTestCase):
         for table in ("members_member", "catalogue_bookedition", "catalogue_bookcopy"):
             self.assertDenied(f"DELETE FROM {table}")
             self.assertDenied(f"TRUNCATE {table}")
+        self.assertDenied("DELETE FROM memberships_subscriptionplan")
+        self.assertDenied("DELETE FROM memberships_membersubscription")
+        self.assertDenied("TRUNCATE memberships_membersubscription")
+        self.assertDenied("TRUNCATE memberships_subscriptionplan")
         self.assertDenied("DELETE FROM accounts_user")
         self.assertDenied("DELETE FROM core_librarysetting")
         self.run_rt("UPDATE members_member SET notes = 'ok'")
@@ -223,9 +242,6 @@ class RuntimePrivilegeTests(TransactionTestCase):
         self.assertIn("permanent", str(ctx.exception))
 
     def test_schema_ownership_and_object_creation_are_denied(self):
-        owner_sql(
-            "DROP EXTENSION IF EXISTS btree_gist"
-        )  # a leftover would mask the privilege error
         for sql in (
             "ALTER TABLE audit_auditevent OWNER TO current_user",
             "ALTER TABLE members_member ADD COLUMN x int",
@@ -237,8 +253,9 @@ class RuntimePrivilegeTests(TransactionTestCase):
             "CREATE FUNCTION zz_f() RETURNS int AS 'select 1' LANGUAGE sql",
             "CREATE SCHEMA zz_schema",
             "CREATE TEMP TABLE zz_tmp (a int)",
-            "CREATE EXTENSION btree_gist",
+            "CREATE EXTENSION IF NOT EXISTS pg_trgm",
             "CREATE EXTENSION IF NOT EXISTS pgcrypto",
+            "DROP EXTENSION btree_gist",
             "ALTER SEQUENCE members_member_id_seq RESTART",
             "DROP SEQUENCE members_member_id_seq CASCADE",
             f'ALTER DATABASE "{connection.settings_dict["NAME"]}" SET search_path = zz',
@@ -281,10 +298,10 @@ class RuntimePrivilegeTests(TransactionTestCase):
 
     # ---- owner-only operations stay with the owner ----------------------------------------
     def test_extension_management_belongs_to_the_owner(self):
-        self.assertDenied("CREATE EXTENSION IF NOT EXISTS btree_gist")
-        owner_sql(
-            "CREATE EXTENSION IF NOT EXISTS btree_gist"
-        )  # the owner role can (Phase 3 needs it)
+        self.assertDenied("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        # btree_gist (needed by the subscription non-overlap constraint) is created by the
+        # migrations, i.e. by the OWNER role; running it again as the owner is harmless.
+        owner_sql("CREATE EXTENSION IF NOT EXISTS btree_gist")
         owner = self.run_rt(
             "SELECT pg_get_userbyid(extowner) FROM pg_extension WHERE extname='btree_gist'"
         )[0][0]
@@ -355,6 +372,29 @@ try:
     out["delete_members"] = "ALLOWED"
 except DatabaseError:
     out["delete_members"] = "denied"
+from datetime import date
+from finance.models import FinancialTransaction
+from finance.services import Entry
+from memberships import services as mem
+reg = mem.register_member(
+    actor=owner, member_fields={"full_name": "Paid", "national_number": "9811100002", "region": "IN"},
+    plan_code="6m", subscription_entries=[Entry("cash", 30000), Entry("upi", 50000, reference="U")],
+    token_entries=[Entry("cash", 50000)])
+out["registered"] = [t.receipt_no for t in reg.transactions]
+mem.renew_subscription(actor=owner, member=reg.member, plan_code="12m", entries=[Entry("cash", 150000)])
+out["subscriptions"] = reg.member.subscriptions.count()
+for name, action in (
+    ("fin_update", lambda: FinancialTransaction.objects.update(reason="x")),
+    ("fin_delete", lambda: FinancialTransaction.objects.all()._raw_delete(using="default")),
+    ("sub_edit", lambda: reg.member.subscriptions.update(starts_on=date(2000, 1, 1))),
+    ("sub_delete", lambda: reg.member.subscriptions.all()._raw_delete(using="default")),
+):
+    try:
+        with transaction.atomic():
+            action()
+        out[name] = "ALLOWED"
+    except DatabaseError:
+        out[name] = "denied"
 out["audit_rows"] = AuditEvent.objects.count()
 print("RESULT" + json.dumps(out))
 """
@@ -377,7 +417,7 @@ print("RESULT" + json.dumps(out))
             text=True,
             cwd=settings.BASE_DIR,
         )
-        self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+        self.assertEqual(done.returncode, 0, done.stderr[-3500:])
         result = json.loads(done.stdout.split("RESULT", 1)[1])
         self.assertEqual(result["current_user"], RUNTIME)
         self.assertEqual((result["login"], result["dashboard"], result["pdf"]), (302, 200, 200))
@@ -385,3 +425,7 @@ print("RESULT" + json.dumps(out))
         self.assertEqual(result["tamper"], "denied")
         self.assertEqual(result["delete_members"], "denied")
         self.assertGreater(result["audit_rows"], 5)
+        self.assertEqual(len(result["registered"]), 2)
+        self.assertEqual(result["subscriptions"], 2)
+        for name in ("fin_update", "fin_delete", "sub_edit", "sub_delete"):
+            self.assertEqual(result[name], "denied", name)
