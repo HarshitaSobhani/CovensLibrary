@@ -185,3 +185,27 @@ The owner formally confirmed D-17 to D-24. They fill gaps the register left open
 | D-23 | **Notifications: transactional outbox (confirmed)** | Phase 3 and Phase 4 domain events are stored durably in `core_domainevent` (APPEND_ONLY, unique non-empty `dedupe_key`) inside the SAME database transaction as the business operation: rollback = no event, commit = event exists, repeated emit with one key = one row. Implemented: durable storage only (`core/outbox.py`, `core.0007-0008`). Phase 5b owns delivery, notification records, the 09:00 schedule, SMTP retries and state. Phase 7c owns scheduling. An event with no notification record is unconsumed. |
 | D-24 | **Launch catch-up (confirmed)** | `python manage.py run_daily_jobs` is the idempotent daily/catch-up command; wiring it to Task Scheduler and application launch is Phase 7c. Until then it must be run by hand, and a forfeiture is only posted when it runs (always with the original effective date). Renewals of loans already out stay possible when the token is forfeited or the member is not active (B16). |
 
+
+
+## Phase 5 implementation defaults awaiting owner confirmation (D-25 to D-26)
+Phase 5 filled gaps the register leaves open. None changes an approved rule; each is the most conservative reading, is isolated in one place and is covered by tests. Please confirm or change.
+
+| # | Gap | Implemented default |
+|---|---|---|
+| D-25a | **"Incomplete membership record"** (attention criterion 6) | A member with no subscription at all, or one whose reactivation requires a new subscription. A missing email is NOT incomplete: it is a normal state recorded as a skipped email. |
+| D-25b | **"Unresolved damaged or lost case"** (criterion 4, decisions section) | A copy of that member's loan that is still Lost, or Damaged/Poor and not available again. (Phase 4 has no separate "resolved" flag.) |
+| D-25c | **Upcoming-expiry window** | 30 days by default, owner-configurable from 1 to 365 days in dashboard settings. A member whose subscription is continued by an early renewal is not listed. |
+| D-26a | **When the "subscription expiry notice" is sent** | At 09:00 Asia/Kolkata on the expiry date (the first expired day), unless the subscription is continued by a renewal. |
+| D-26b | **Subscription renewal email** | A `subscription.renewed` event sends the same "subscription activation" email as a first activation (a renewal activates a subscription). |
+| D-26c | **Events with no email** | `member.registered`, `token.collected`, `token.refunded` (its REF receipt already sends `payment.receipted`) and `loan.lost` (the token forfeiture it causes sends `token.forfeited`) have no email. They are consumed with a bookkeeping "skipped" record so that "consumed = has a notification record" holds. |
+| D-26d | **Missed reminder days** | **Decided by the owner (D-27a):** back-filled for up to 7 calendar days, only while still relevant (see D-27). |
+| D-26e | **Anonymisation and past emails** | **Decided by the owner (D-27b).** |
+| D-26f | **Immediate sending** | The email follows an owner action in the same request (best effort, never blocks or breaks the action); `run_daily_jobs` and the "Process now" button are the safety net. Retries happen only when a cycle runs after they fall due, so the timetable is exact only once Phase 7c runs the job unattended. |
+| D-26g | **Crash window** | If the application dies after SMTP accepts a message but before the result is saved, the 10-minute lease expires and the message is sent again. This at-least-once window cannot be closed without SMTP idempotency; it is disclosed rather than hidden. |
+
+## Owner decisions D-27 (Phase 5 acceptance review; supersede D-26d and D-26e)
+| # | Decision |
+|---|---|
+| D-27a | **Reminder back-fill.** A reminder missed while the application was off is created on the next run for up to **7 calendar days** after its scheduled date, but only if still relevant at processing time: an expiry reminder only before expiry and while not renewed; an expiry notice only while the member is still not covered by a subscription; an overdue reminder only for a loan still out and before day 8 (and only the LATEST missed milestone is created, older ones are superseded). The original date is kept in `scheduled_for`; the real processing time is `created_at` / the attempt log. Idempotency keys prevent duplicates. Day-8 forfeiture processing is unchanged. |
+| D-27b | **Anonymisation of notifications**, done inside the anonymisation transaction and audited (`notifications.redacted`): not yet accepted by SMTP (prepared, retry-pending) -> skipped, address, subject and body erased; failed after all retries -> skipped, address, subject and body erased; SMTP-accepted -> subject and body erased, address and accepted time kept **90 days**, then the address is erased automatically and the status and time remain for reports. Stored errors keep only their type (attempt rows never contain an address). |
+| D-27c | *Implementation assumption to confirm:* the 90 days are counted **from the anonymisation date** (not from the send date). |

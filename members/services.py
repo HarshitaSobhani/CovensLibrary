@@ -163,7 +163,12 @@ def reactivate_member(member, *, actor, mode):
     )
 
 
-@transaction.atomic
+# Other apps register callables(member, actor=...) run INSIDE the anonymisation transaction
+# (the notification app erases the member's emails there), so a failure rolls the whole
+# anonymisation back.
+ANONYMISATION_HOOKS = []
+
+
 @transaction.atomic
 def anonymise_member(member, *, actor, reason, confirm):
     """Clear personal data in the live database only; history and the member ID remain.
@@ -186,6 +191,8 @@ def anonymise_member(member, *, actor, reason, confirm):
     member.status = Member.Status.ARCHIVED
     member.anonymised_at = timezone.now()
     member.save()
+    for hook in ANONYMISATION_HOOKS:
+        hook(member, actor=actor)
     record(
         "member.anonymise",
         actor=actor,

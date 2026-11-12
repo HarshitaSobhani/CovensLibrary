@@ -22,6 +22,7 @@ class LibrarySetting(models.Model):
     receipt_footer = models.CharField(max_length=300, blank=True)
     backup_time = models.TimeField(null=True, blank=True)
     drive_folder_id = models.CharField(max_length=200, blank=True)
+    dashboard_config = models.JSONField(default=dict, blank=True)  # see core/dashboard_config.py
 
     class Meta:
         constraints = [

@@ -4,6 +4,7 @@
 <a href="{% url 'circulation:list' %}" {% if nav_active == 'loans' %}class="active" aria-current="page"{% endif %}>Borrowing &amp; Returns</a>
 <a href="{% url 'memberships:register' %}" {% if nav_active == 'register' %}class="active"{% endif %}>Register a member</a>
 <span class="nav-item" aria-disabled="true">Payments &amp; Tokens</span>
-<span class="nav-item" aria-disabled="true">Reminders</span>
+<a href="{% url 'communications:list' %}" {% if nav_active == 'reminders' %}class="active" aria-current="page"{% endif %}>Reminders</a>
 <span class="nav-item" aria-disabled="true">Reports &amp; Analytics</span>
-<span class="nav-item" aria-disabled="true">Settings</span>
+<a href="{% url 'core:calendar' %}" {% if nav_active == 'calendar' %}class="active" aria-current="page"{% endif %}>Calendar</a>
+<a href="{% url 'core:settings' %}" {% if nav_active == 'settings' %}class="active" aria-current="page"{% endif %}>Settings</a>

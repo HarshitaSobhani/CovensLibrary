@@ -170,6 +170,7 @@ class RuntimePrivilegeTests(TransactionTestCase):
             "circulation_loanrenewal",
             "core_settingchangeevent",
             "core_domainevent",
+            "communications_notificationattempt",
         ):
             self.assertDenied(f"UPDATE {table} SET id = id")
             self.assertDenied(f"DELETE FROM {table}")
@@ -192,6 +193,8 @@ class RuntimePrivilegeTests(TransactionTestCase):
         self.assertDenied("DELETE FROM memberships_membersubscription")
         self.assertDenied("DELETE FROM circulation_loan")
         self.assertDenied("DELETE FROM circulation_pendingforfeiture")
+        self.assertDenied("DELETE FROM communications_notification")
+        self.assertDenied("TRUNCATE communications_notification")
         self.assertDenied("TRUNCATE circulation_pendingforfeiture")
         self.assertDenied("TRUNCATE circulation_loan")
         self.assertDenied("TRUNCATE memberships_membersubscription")
@@ -353,6 +356,14 @@ owner = User.objects.create_user("owner", email="o@example.com", password="Corre
 c = Client()
 out["login"] = c.post("/accounts/login/", {"username": "owner", "password": "Correct-Horse-9!"}).status_code
 out["dashboard"] = c.get("/").status_code
+out["phase5a"] = [
+    c.get("/calendar/").status_code,
+    c.get("/search/?q=asha").status_code,
+    c.get("/settings/").status_code,
+    c.post("/settings/", {"action": "down", "section": "overdue"}).status_code,
+    c.post("/settings/", {"action": "save", "visible": ["counts"], "expiry_window_days": "20"}).status_code,
+    c.get("/").status_code,
+]
 m = ms.create_member(actor=owner, full_name="Runtime", national_number="9811100001", region="IN")
 cat = Category.objects.create(name="Fiction")
 e = cs.create_edition(actor=owner, title="T", category=cat)
@@ -430,6 +441,42 @@ for name, action in (
         out[name] = "denied"
 out["audit_rows"] = AuditEvent.objects.count()
 from core.models import DomainEvent
+from communications import services as comms
+from communications.models import Notification, NotificationAttempt
+cycle = comms.run_cycle()
+out["comms"] = [
+    cycle["consumed"] > 0,
+    Notification.objects.filter(status="smtp_accepted").count() > 0,
+    NotificationAttempt.objects.count() > 0,
+    comms.unconsumed_events().count(),
+]
+from members import services as msvc
+reg2 = mem.register_member(
+    actor=owner,
+    member_fields={"full_name": "Erase Me", "national_number": "9811100003", "region": "IN", "email": "erase@example.com"},
+    plan_code="6m", subscription_entries=[Entry("cash", 80000)], token_entries=[Entry("cash", 50000)])
+comms.run_cycle()
+mine = Notification.objects.filter(member=reg2.member)
+out["before_anon"] = [mine.filter(status="smtp_accepted").count() > 0, mine.exclude(body="").exists()]
+msvc.anonymise_member(reg2.member, actor=owner, reason="runtime check", confirm=True)
+out["after_anon"] = [
+    mine.exclude(body="").exists(),
+    mine.exclude(subject="").exists(),
+    sorted(set(mine.values_list("recipient_email", flat=True))),
+]
+out["redaction_audit"] = AuditEvent.objects.filter(action="notifications.redacted").count()
+for name, action in (
+    ("notif_delete", lambda: Notification.objects.all()._raw_delete(using="default")),
+    ("notif_reopen", lambda: Notification.objects.filter(status="smtp_accepted").update(status="prepared")),
+    ("attempt_edit", lambda: NotificationAttempt.objects.update(error="x")),
+    ("attempt_delete", lambda: NotificationAttempt.objects.all()._raw_delete(using="default")),
+):
+    try:
+        with transaction.atomic():
+            action()
+        out[name] = "ALLOWED"
+    except DatabaseError:
+        out[name] = "denied"
 out["outbox_types"] = sorted(set(DomainEvent.objects.values_list("event_type", flat=True)))
 for name, action in (
     ("outbox_update", lambda: DomainEvent.objects.update(event_type="x")),
@@ -466,6 +513,7 @@ print("RESULT" + json.dumps(out))
         result = json.loads(done.stdout.split("RESULT", 1)[1])
         self.assertEqual(result["current_user"], RUNTIME)
         self.assertEqual((result["login"], result["dashboard"], result["pdf"]), (302, 200, 200))
+        self.assertEqual(result["phase5a"], [200, 200, 200, 302, 302, 200])
         self.assertEqual(result["member"], "COV-M-000001")
         self.assertEqual(result["tamper"], "denied")
         self.assertEqual(result["delete_members"], "denied")

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block heading %}Reminders &amp; emails{% endblock %}
+{% block content %}
+<div class="card-surface mb-3">
+  <div class="d-flex gap-2 flex-wrap align-items-center">
+    {% for key in filters %}<a href="?status={{ key }}" {% if key == show %}aria-current="page"{% endif %}>{{ key|capfirst }}</a>{% endfor %}
+    <form method="post" action="{% url 'communications:process' %}" class="ms-auto">{% csrf_token %}<button class="btn-primary-token" type="submit">Process now</button></form>
+    <form method="post" action="{% url 'communications:test_email' %}">{% csrf_token %}<button class="btn-primary-token" type="submit">Send test email</button></form>
+    <a href="{% url 'communications:templates' %}">WhatsApp templates</a>
+  </div>
+  <p class="small text-muted-token mt-2 mb-0">Emails are sent automatically. <strong>SMTP accepted</strong> means the mail server took the message; it does not mean delivered or read. Failed emails are retried after 5 minutes, 30 minutes and 2 hours, then marked failed.</p>
+</div>
+<div class="card-surface">
+  <table class="table table-sm"><thead><tr><th>Created</th><th>Member</th><th>Email</th><th>Status</th><th>Attempts</th><th>Detail</th></tr></thead><tbody>
+  {% for n in page %}<tr>
+    <td>{{ n.created_at|date:"d M Y H:i" }}</td>
+    <td><a href="{% url 'members:detail' n.member_id %}">{{ n.member.membership_no }}</a></td>
+    <td><a href="{% url 'communications:detail' n.pk %}">{{ n.get_kind_display }}</a></td>
+    <td>{{ n.get_status_display }}{% if n.skip_reason %} — {{ n.skip_reason }}{% endif %}</td>
+    <td>{{ n.attempt_count }}</td>
+    <td>{{ n.last_error|truncatechars:60 }}</td>
+  </tr>{% empty %}<tr><td colspan="6">Nothing here.</td></tr>{% endfor %}
+  </tbody></table>
+  {% if page.has_other_pages %}<p>{% if page.has_previous %}<a href="?status={{ show }}&page={{ page.previous_page_number }}">Previous</a>{% endif %} Page {{ page.number }} of {{ page.paginator.num_pages }} {% if page.has_next %}<a href="?status={{ show }}&page={{ page.next_page_number }}">Next</a>{% endif %}</p>{% endif %}
+</div>
+{% endblock %}

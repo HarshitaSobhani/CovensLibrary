@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block heading %}Search{% endblock %}
+{% block content %}
+<div class="card-surface mb-3">
+  <form method="get" role="search" style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <label class="visually-hidden" for="q">Search</label>
+    <input id="q" name="q" value="{{ q }}" class="form-control" style="max-width:32rem" minlength="2" required>
+    <button class="btn-primary-token" type="submit">Search</button>
+  </form>
+  <p class="text-muted-token mt-2 mb-0">Member name, mobile, member ID, title, author, ISBN, copy ID, receipt number.</p>
+</div>
+{% if result == None %}{% if q %}<div class="card-surface"><p class="mb-0">Type at least 2 characters.</p></div>{% endif %}
+{% else %}
+<div class="card-surface mb-3"><h2 style="font-size:1.1rem">Members ({{ result.members|length }})</h2>
+  {% for m in result.members %}<div><a href="{% url 'members:detail' m.pk %}">{{ m.full_name }}</a> {{ m.membership_no }} · {{ m.mobile_e164 }}</div>{% empty %}<p class="text-muted-token mb-0">None.</p>{% endfor %}</div>
+<div class="card-surface mb-3"><h2 style="font-size:1.1rem">Books ({{ result.editions|length }})</h2>
+  {% for e in result.editions %}<div><a href="{% url 'catalogue:edition_detail' e.pk %}">{{ e.title }}</a>{% if e.author %} — {{ e.author }}{% endif %}{% if e.isbn %} · {{ e.isbn }}{% endif %}</div>{% empty %}<p class="text-muted-token mb-0">None.</p>{% endfor %}</div>
+<div class="card-surface mb-3"><h2 style="font-size:1.1rem">Copies ({{ result.copies|length }})</h2>
+  {% for c in result.copies %}<div><a href="{% url 'catalogue:copy_detail' c.pk %}">{{ c.copy_code }}</a> {{ c.edition.title }} · {{ c.get_status_display }}</div>{% empty %}<p class="text-muted-token mb-0">None.</p>{% endfor %}</div>
+<div class="card-surface mb-3"><h2 style="font-size:1.1rem">Receipts ({{ result.transactions|length }})</h2>
+  {% for t in result.transactions %}<div>{% if t.receipt_document_id %}<a href="{% url 'finance:receipt' t.receipt_document_id %}">{{ t.receipt_no }}</a>{% else %}{{ t.receipt_no }}{% endif %} · {{ t.member.full_name }}</div>{% empty %}<p class="text-muted-token mb-0">None.</p>{% endfor %}</div>
+{% endif %}
+{% endblock %}

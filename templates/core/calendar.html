@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block heading %}Calendar{% endblock %}
+{% block content %}
+<div class="card-surface">
+  <p><a href="?month={{ prev }}">&larr; Previous</a> · <strong>{{ title }}</strong> · <a href="?month={{ next }}">Next &rarr;</a></p>
+  <p class="text-muted-token">Expiries, due dates, reminder dates and day-8 forfeiture days. Reminder dates are when the 09:00 email is due.</p>
+  {% for day, items in days %}
+  <h2 style="font-size:1rem" {% if day == today %}aria-current="date"{% endif %}>{{ day|date:"l, j F" }}</h2>
+  <ul>{% for kind, label, member_id in items %}<li><span class="text-muted-token">{{ kind }}</span> — <a href="{% url 'members:detail' member_id %}">{{ label }}</a></li>{% endfor %}</ul>
+  {% empty %}<p class="mb-0">Nothing scheduled this month.</p>{% endfor %}
+</div>
+{% endblock %}

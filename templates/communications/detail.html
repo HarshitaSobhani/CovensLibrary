@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block heading %}Email{% endblock %}
+{% block content %}
+<div class="card-surface mb-3">
+  <h1 style="font-size:1.2rem">{{ note.get_kind_display }}</h1>
+  <dl class="row">
+    <dt class="col-4">Member</dt><dd class="col-8"><a href="{% url 'members:detail' note.member_id %}">{{ note.member.membership_no }}</a></dd>
+    <dt class="col-4">Status</dt><dd class="col-8">{{ note.get_status_display }}{% if note.skip_reason %} — {{ note.skip_reason }}{% endif %}</dd>
+    <dt class="col-4">Address used</dt><dd class="col-8">{{ note.recipient_email|default:"-" }}</dd>
+    <dt class="col-4">Attempts</dt><dd class="col-8">{{ note.attempt_count }}</dd>
+    {% if next_retry %}<dt class="col-4">Next attempt</dt><dd class="col-8">{{ next_retry }}</dd>{% endif %}
+    {% if note.accepted_at %}<dt class="col-4">SMTP accepted</dt><dd class="col-8">{{ note.accepted_at|date:"d M Y H:i" }} (not proof of delivery or reading)</dd>{% endif %}
+    {% if note.last_error %}<dt class="col-4">Last error</dt><dd class="col-8">{{ note.last_error }}</dd>{% endif %}
+    {% if note.scheduled_date %}<dt class="col-4">Scheduled for</dt><dd class="col-8">{{ note.scheduled_date|date:"d M Y" }}{% if not note.scheduled_for %} (date not recorded; creation date shown){% endif %}</dd>{% endif %}
+    <dt class="col-4">Source key</dt><dd class="col-8"><code>{{ note.dedupe_key }}</code></dd>
+  </dl>
+  {% if note.subject %}<h2 style="font-size:1rem">{{ note.subject }}</h2><pre style="white-space:pre-wrap">{{ note.body }}</pre>{% endif %}
+  <h2 style="font-size:1rem">Attempts</h2>
+  <table class="table table-sm"><thead><tr><th>#</th><th>When</th><th>Result</th><th>Error</th></tr></thead><tbody>
+  {% for a in attempts %}<tr><td>{{ a.attempt_no }}</td><td>{{ a.attempted_at|date:"d M Y H:i:s" }}</td><td>{% if a.accepted %}SMTP accepted{% else %}SMTP failed{% endif %}</td><td>{{ a.error }}</td></tr>{% empty %}<tr><td colspan="4">No attempts.</td></tr>{% endfor %}
+  </tbody></table>
+  <a href="{% url 'communications:list' %}">Back</a>
+</div>
+{% endblock %}

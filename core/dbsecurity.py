@@ -77,6 +77,10 @@ TABLE_POLICIES = {
     "circulation_loan": NO_DELETE,  # closes once; a trigger allows only the documented changes
     "circulation_loanrenewal": APPEND_ONLY,
     "circulation_pendingforfeiture": NO_DELETE,  # pending -> confirmed/declined once (guarded)
+    # --- communications (delivery state is kept apart from the immutable outbox events)
+    "communications_notification": NO_DELETE,  # state moves forward only (guard trigger)
+    "communications_notificationattempt": APPEND_ONLY,  # every SMTP attempt, with its error
+    "communications_messagetemplate": MUTABLE,  # owner-editable WhatsApp texts
     # --- Django framework tables (written only by migrations, i.e. by the owner)
     "django_migrations": READ_ONLY,
     "django_content_type": READ_ONLY,
@@ -95,6 +99,8 @@ REQUIRED_TRIGGERS = {
     "circulation_loan": ("circulation_loan_guard",),
     "circulation_loanrenewal": ("circulation_loanrenewal_append_only",),
     "circulation_pendingforfeiture": ("circulation_pending_forfeiture_guard",),
+    "communications_notification": ("communications_notification_guard",),
+    "communications_notificationattempt": ("communications_notificationattempt_append_only",),
     "core_settingchangeevent": ("core_settingchangeevent_append_only",),
     "core_domainevent": ("core_domainevent_append_only",),
     "finance_financialtransaction": (

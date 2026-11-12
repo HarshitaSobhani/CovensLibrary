@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block heading %}WhatsApp templates{% endblock %}
+{% block content %}
+<div class="card-surface">
+  <p class="text-muted-token">Allowed placeholders: {% for p in placeholders %}<code>{% templatetag openvariable %}{{ p }}{% templatetag closevariable %}</code> {% endfor %}</p>
+  {% for key, body in rows %}
+  <form method="post" class="mb-3">{% csrf_token %}
+    <input type="hidden" name="key" value="{{ key }}">
+    <label for="t-{{ key }}"><strong>{{ key|capfirst }}</strong></label>
+    <textarea id="t-{{ key }}" name="body" rows="3" class="form-control" maxlength="2000">{{ body }}</textarea>
+    <button class="btn-primary-token mt-2" type="submit">Save</button>
+  </form>
+  {% endfor %}
+  <a href="{% url 'communications:list' %}">Back</a>
+</div>
+{% endblock %}

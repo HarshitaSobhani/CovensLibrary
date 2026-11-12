@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block heading %}Settings{% endblock %}
+{% block content %}
+<div class="card-surface mb-3">
+  <h2 style="font-size:1.1rem">Dashboard sections</h2>
+  <form method="post" id="save-form">{% csrf_token %}
+    <input type="hidden" name="action" value="save">
+    <table class="table"><thead><tr><th>Show</th><th>Section (in dashboard order)</th><th>Move</th></tr></thead><tbody>
+    {% for key, title, visible in sections %}
+    <tr><td><input type="checkbox" name="visible" value="{{ key }}" id="v-{{ key }}" {% if visible %}checked{% endif %}></td>
+    <td><label for="v-{{ key }}">{{ title }}</label></td>
+    <td>
+      <button class="btn-primary-token" type="submit" form="move-{{ key }}-up" {% if forloop.first %}disabled{% endif %}>Up</button>
+      <button class="btn-primary-token" type="submit" form="move-{{ key }}-down" {% if forloop.last %}disabled{% endif %}>Down</button>
+    </td></tr>
+    {% endfor %}
+    </tbody></table>
+    <h2 style="font-size:1.1rem">Members requiring attention</h2>
+    {% for key, label, on in criteria %}<div><label><input type="checkbox" name="criteria" value="{{ key }}" {% if on %}checked{% endif %}> {{ label }}</label></div>{% endfor %}
+    <h2 style="font-size:1.1rem" class="mt-3">Upcoming expiries</h2>
+    <label for="w">Show expiries within (days)</label>
+    <input id="w" name="expiry_window_days" type="number" min="1" max="365" value="{{ conf.expiry_window_days }}" class="form-control" style="max-width:8rem">
+    <button class="btn-primary-token mt-3" type="submit">Save</button>
+  </form>
+  {% for key, title, visible in sections %}
+  <form method="post" id="move-{{ key }}-up">{% csrf_token %}<input type="hidden" name="action" value="up"><input type="hidden" name="section" value="{{ key }}"></form>
+  <form method="post" id="move-{{ key }}-down">{% csrf_token %}<input type="hidden" name="action" value="down"><input type="hidden" name="section" value="{{ key }}"></form>
+  {% endfor %}
+</div>
+{% endblock %}

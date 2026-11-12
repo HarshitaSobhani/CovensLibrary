@@ -19,6 +19,7 @@
     {% if member.status != 'archived' %}
     <form method="post" action="{% url 'members:action' member.pk 'archive' %}">{% csrf_token %}<button class="btn-primary-token" type="submit">Archive</button></form>
     {% endif %}
+    {% if not member.anonymised_at %}<a class="btn-primary-token" style="text-decoration:none" href="{% url 'communications:whatsapp' member.pk %}">WhatsApp…</a>{% endif %}
     <a class="btn-primary-token" style="text-decoration:none" href="{% url 'members:anonymise' member.pk %}">Anonymise…</a>
   </div>
   {% if member.status != 'active' %}
