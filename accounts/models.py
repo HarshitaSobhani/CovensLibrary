@@ -10,6 +10,10 @@ class User(AbstractUser):
 
     class Meta:
         db_table = "accounts_user"
+        constraints = [
+            # Single-owner rule (PRD §4.1): the table can never hold more than one account.
+            models.UniqueConstraint(models.Value(1), name="accounts_single_owner"),
+        ]
 
 
 class LoginEvent(models.Model):
@@ -23,11 +27,17 @@ class LoginEvent(models.Model):
         FAILED = "failed", "Failed"
         THROTTLED = "throttled", "Throttled"
         RECOVERY_FAILED = "recovery_failed", "Recovery code failed"
+        RESET_REQUESTED = "reset_requested", "Password reset requested"
+        RESET_THROTTLED = "reset_throttled", "Password reset throttled"
 
     user = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.PROTECT, related_name="login_events"
     )
+    # Only a username that matches a real account is stored. Anything else (including a password
+    # typed into the username box) is never persisted; `username_key` is a keyed hash used only
+    # to rate-limit repeated attempts.
     username_tried = models.CharField(max_length=150, blank=True)
+    username_key = models.CharField(max_length=64, blank=True, default="")
     outcome = models.CharField(max_length=20, choices=Outcome.choices)
     ip = models.GenericIPAddressField(null=True, blank=True)
     occurred_at = models.DateTimeField(default=timezone.now)
@@ -36,6 +46,7 @@ class LoginEvent(models.Model):
         indexes = [
             models.Index(fields=["outcome", "occurred_at"], name="login_outcome_time_idx"),
             models.Index(fields=["username_tried", "occurred_at"], name="login_user_time_idx"),
+            models.Index(fields=["username_key", "occurred_at"], name="login_key_time_idx"),
             models.Index(fields=["ip", "occurred_at"], name="login_ip_time_idx"),
         ]
 

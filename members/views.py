@@ -5,6 +5,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from core.errors import RuleViolation
+from core.http import clean_query, querystring
 
 from . import services
 from .forms import AnonymiseForm, MemberForm, ReactivateForm
@@ -13,7 +14,7 @@ from .models import Member
 
 @login_required
 def member_list(request):
-    q = request.GET.get("q", "")
+    q = clean_query(request.GET.get("q", ""))
     status = request.GET.get("status", "")
     page = Paginator(services.search_members(q, status), 25).get_page(request.GET.get("page"))
     return render(
@@ -21,6 +22,7 @@ def member_list(request):
         "members/list.html",
         {
             "page": page,
+            "qs": querystring(q=q, status=status if status in Member.Status.values else ""),
             "q": q,
             "status": status,
             "statuses": Member.Status.choices,

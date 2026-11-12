@@ -157,14 +157,21 @@ class SchemaGuaranteeTests(TestCase):
         ):
             self.assertIn(expected, names)
 
-    def test_btree_gist_can_be_created_by_the_application_role(self):
-        # Needed from Phase 3 for the subscription non-overlap exclusion constraint.
+    def test_btree_gist_is_managed_by_the_owner_role_not_the_runtime_role(self):
+        # Needed from Phase 3 for the subscription non-overlap constraint. The suite runs as the
+        # OWNER role, which may create the extension (trusted in PostgreSQL 13+) and is not a
+        # superuser; the runtime role's inability is proven in the core privilege tests.
         with connection.cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
             cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'btree_gist'")
             self.assertEqual(cur.fetchone()[0], 1)
             cur.execute("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
-            self.assertFalse(cur.fetchone()[0], "application role must not be a superuser")
+            self.assertFalse(cur.fetchone()[0], "the owner role must not be a superuser")
+            cur.execute(
+                "SELECT current_user = pg_get_userbyid(datdba) FROM pg_database "
+                "WHERE datname = current_database()"
+            )
+            self.assertTrue(cur.fetchone()[0], "the suite runs as the database owner role")
 
     def _rows(self, sql):
         with connection.cursor() as cur:

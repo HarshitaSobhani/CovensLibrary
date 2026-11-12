@@ -11,6 +11,7 @@
 {% endif %}
 <p class="mt-3"><a href="{% url 'catalogue:import_errors' batch.pk %}">Download error and warning report (CSV)</a></p>
 <table class="table"><thead><tr><th>Row</th><th>Title</th><th>Result</th><th>Messages</th></tr></thead><tbody>
-{% for r in rows %}<tr><td>{{ r.row_number }}</td><td>{{ r.data.Title }}</td><td>{% if r.is_valid %}OK{% else %}Error{% endif %}</td>
+{% for r in page %}<tr><td>{{ r.row_number }}</td><td>{{ r.data.Title }}</td><td>{% if r.is_valid %}OK{% else %}Error{% endif %}</td>
 <td>{% for e in r.errors %}<div class="text-danger">{{ e.field }}: {{ e.message }}</div>{% endfor %}{% for w in r.warnings %}<div class="text-muted-token">{{ w.field }}: {{ w.message }}</div>{% endfor %}</td></tr>{% endfor %}</tbody></table>
+{% include "partials/pagination.html" %}
 </div>{% endblock %}

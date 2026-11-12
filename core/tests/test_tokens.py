@@ -32,12 +32,29 @@ def contrast(a, b):
 PAIRS = [
     ("text", "bg"),
     ("text", "surface"),
+    ("text", "surface-2"),
+    ("text", "input-bg"),
     ("text-muted", "bg"),
     ("text-muted", "surface"),
+    ("text-muted", "input-bg"),
     ("primary", "bg"),
     ("on-primary", "primary"),
+    ("link", "bg"),
+    ("link", "surface"),
+    ("link", "surface-2"),
+    ("danger", "bg"),
+    ("danger", "surface"),
     ("accent-green", "bg"),
     ("sidebar-text", "sidebar-bg"),
+]
+# Non-text contrast (WCAG 1.4.11): input boundaries and the focus ring need 3:1.
+UI_PAIRS = [
+    ("input-border", "bg"),
+    ("input-border", "surface"),
+    ("input-border", "input-bg"),
+    ("primary", "bg"),
+    ("primary", "surface"),
+    ("primary", "input-bg"),
 ]
 
 
@@ -49,4 +66,13 @@ class DesignTokenContrastTests(SimpleTestCase):
                 ratio = contrast(tokens[fg], tokens[bg])
                 self.assertGreaterEqual(
                     ratio, 4.5, f"{theme_name}: {fg} on {bg} = {ratio:.2f} (< 4.5)"
+                )
+
+    def test_interface_boundaries_and_focus_ring_meet_3_to_1(self):
+        light, dark = parse_blocks()
+        for theme_name, tokens in (("light", light), ("dark", dark)):
+            for fg, bg in UI_PAIRS:
+                ratio = contrast(tokens[fg], tokens[bg])
+                self.assertGreaterEqual(
+                    ratio, 3.0, f"{theme_name}: {fg} on {bg} = {ratio:.2f} (< 3.0)"
                 )

@@ -11,4 +11,4 @@
 <table class="table"><thead><tr><th>Title</th><th>Author</th><th>Category</th><th>ISBN</th></tr></thead><tbody>
 {% for e in page %}<tr><td><a href="{% url 'catalogue:edition_detail' e.pk %}">{{ e.title }}</a></td><td>{{ e.author|default:"—" }}</td><td>{{ e.category.name }}</td><td>{{ e.isbn|default:"—" }}</td></tr>
 {% empty %}<tr><td colspan="4" class="text-muted-token">No books found.</td></tr>{% endfor %}</tbody></table>
-{% include "partials/pagination.html" with qs="q="|add:q|add:"&" %}</div>{% endblock %}
+{% include "partials/pagination.html" %}</div>{% endblock %}

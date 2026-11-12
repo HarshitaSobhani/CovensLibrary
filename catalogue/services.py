@@ -1,11 +1,11 @@
 import re
-from datetime import date
 
 from django.db import transaction
 from django.utils import timezone
 
 from audit.services import record
 from core.errors import RuleViolation
+from core.http import clean_query
 from core.sequences import next_value
 
 from .models import Acquisition, BookCopy, BookEdition, Category, CopyEvent
@@ -44,10 +44,32 @@ def clean_isbn(raw):
     raise RuleViolation("isbn_invalid", "Enter a valid 10- or 13-digit ISBN.")
 
 
+def _isbn13_check_digit(first12):
+    total = sum(int(ch) * (1 if i % 2 == 0 else 3) for i, ch in enumerate(first12))
+    return str((10 - total % 10) % 10)
+
+
+def _isbn10_check_digit(first9):
+    total = sum(int(ch) * (10 - i) for i, ch in enumerate(first9))
+    check = (11 - total % 11) % 11
+    return "X" if check == 10 else str(check)
+
+
+def isbn_variants(isbn):
+    """The same book can carry its ISBN-10 or ISBN-13 form: return every equivalent form."""
+    variants = {isbn}
+    if len(isbn) == 10:
+        base = "978" + isbn[:9]
+        variants.add(base + _isbn13_check_digit(base))
+    elif len(isbn) == 13 and isbn.startswith("978"):
+        variants.add(isbn[3:12] + _isbn10_check_digit(isbn[3:12]))
+    return variants
+
+
 def find_isbn_duplicates(isbn, exclude_pk=None):
     if not isbn:
         return BookEdition.objects.none()
-    qs = BookEdition.objects.filter(isbn=isbn)
+    qs = BookEdition.objects.filter(isbn__in=isbn_variants(isbn))
     return qs.exclude(pk=exclude_pk) if exclude_pk else qs
 
 
@@ -70,7 +92,7 @@ def get_or_create_category(name, actor=None):
 
 # ---------- Editions ----------
 def _check_year(year):
-    if year is not None and not (1000 <= year <= date.today().year + 1):
+    if year is not None and not (1000 <= year <= timezone.localdate().year + 1):
         raise RuleViolation("year_invalid", "Enter a plausible publication year.")
 
 
@@ -221,6 +243,11 @@ def add_copies(
         clean = [c.strip() for c in codes]
         if len(set(clean)) != len(clean) or any(not c for c in clean):
             raise RuleViolation("code_duplicate", "Copy IDs must be unique and non-empty.")
+        reserved = [c for c in clean if re.match(r"^COV-C-\d+$", c)]
+        if reserved:
+            raise RuleViolation(
+                "code_reserved", f"Copy IDs in the format COV-C-nnnnnn are reserved: {reserved[0]}"
+            )
         clash = BookCopy.objects.filter(copy_code__in=clean).values_list("copy_code", flat=True)
         if clash:
             raise RuleViolation("code_exists", f"Copy ID already exists: {', '.join(clash)}")
@@ -308,7 +335,7 @@ def search_editions(query="", archived=False, category=None):
     from django.db.models import Q
 
     qs = BookEdition.objects.filter(is_archived=archived).select_related("category")
-    query = (query or "").strip()
+    query = clean_query(query)
     if query:
         isbn = normalise_isbn(query)
         qs = qs.filter(

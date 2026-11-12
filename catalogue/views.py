@@ -1,11 +1,13 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from core.errors import RuleViolation
+from core.http import clean_query, int_param, querystring
 
 from . import services
 from .forms import CategoryForm, CopiesForm, CopyStateForm, EditionForm, LabelLayoutForm
@@ -17,17 +19,24 @@ NAV = {"nav_active": "books"}
 
 @login_required
 def edition_list(request):
-    q = request.GET.get("q", "")
+    q = clean_query(request.GET.get("q", ""))
     archived = request.GET.get("archived") == "1"
-    category = Category.objects.filter(pk=request.GET.get("category") or 0).first()
+    category_id, ok = int_param(request, "category")
+    category = Category.objects.filter(pk=category_id).first() if category_id else None
+    if not ok or (category_id and category is None):
+        messages.warning(request, "That category filter is not valid and was ignored.")
     page = Paginator(services.search_editions(q, archived, category), 25).get_page(
         request.GET.get("page")
+    )
+    qs = querystring(
+        q=q, archived="1" if archived else "", category=category.pk if category else ""
     )
     return render(
         request,
         "catalogue/edition_list.html",
         {
             "page": page,
+            "qs": qs,
             "q": q,
             "archived": archived,
             "category": category,
@@ -157,9 +166,12 @@ def copy_detail(request, pk):
 @login_required
 def labels_pdf(request, pk):
     edition = get_object_or_404(BookEdition, pk=pk)
-    layout = (
-        LabelLayout.objects.filter(pk=request.GET.get("layout") or 0).first() or default_layout()
-    )
+    layout_id, ok = int_param(request, "layout")
+    layout = LabelLayout.objects.filter(pk=layout_id).first() if layout_id else None
+    if not ok or (layout_id and layout is None):
+        messages.error(request, "That label layout is not valid. Choose one from the list.")
+        return redirect("catalogue:edition_detail", pk=pk)
+    layout = layout or default_layout()
     try:
         pdf = render_labels_pdf(edition.copies.select_related("edition"), layout)
     except RuleViolation as exc:
@@ -197,9 +209,7 @@ def category_list(request):
 def layout_list(request):
     form = LabelLayoutForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        layout = form.save()
-        if layout.is_default:
-            LabelLayout.objects.exclude(pk=layout.pk).update(is_default=False)
+        form.save()
         messages.success(request, "Label layout saved.")
         return redirect("catalogue:layout_list")
     return render(
@@ -207,3 +217,15 @@ def layout_list(request):
         "catalogue/layout_list.html",
         {"form": form, "layouts": LabelLayout.objects.all(), **NAV},
     )
+
+
+@login_required
+@require_POST
+def layout_set_default(request, pk):
+    layout = get_object_or_404(LabelLayout, pk=pk)
+    with transaction.atomic():
+        LabelLayout.objects.exclude(pk=layout.pk).update(is_default=False)
+        layout.is_default = True
+        layout.save(update_fields=["is_default"])
+    messages.success(request, f"'{layout.name}' is now the default label layout.")
+    return redirect("catalogue:layout_list")

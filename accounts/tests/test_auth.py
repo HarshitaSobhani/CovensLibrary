@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts import ratelimit
+from accounts.identity import key_for
 from accounts.models import LoginEvent, RecoveryCode
 from accounts.recovery import consume_code, issue_code
 from accounts.sessions import end_of_day, seconds_until_end_of_day
@@ -128,7 +129,7 @@ class RateLimitTests(AuthBase):
         later = timezone.now() + timedelta(minutes=16)
         with mock.patch("django.utils.timezone.now", return_value=later):
             with mock.patch("accounts.ratelimit.timezone.now", return_value=later):
-                self.assertIsNone(ratelimit.retry_after("owner", "127.0.0.1", now=later))
+                self.assertIsNone(ratelimit.retry_after(key_for("owner"), "127.0.0.1", now=later))
         LoginEvent.objects.update(occurred_at=timezone.now() - timedelta(minutes=16))
         self.assertEqual(self.login().status_code, 302)
 
@@ -150,7 +151,7 @@ class RateLimitTests(AuthBase):
 
     def test_retry_after_value(self):
         self.fail(5)
-        wait = ratelimit.retry_after("owner", "127.0.0.1")
+        wait = ratelimit.retry_after(key_for("owner"), "127.0.0.1")
         self.assertTrue(timedelta(minutes=14) < wait <= timedelta(minutes=15))
 
 

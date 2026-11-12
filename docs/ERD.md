@@ -50,8 +50,9 @@ erDiagram
     LOGIN_EVENT {
         bigint id PK
         bigint user_id FK "nullable"
-        string username_tried "attempted username only; never a password"
-        string outcome "success|failed|throttled|recovery_failed"
+        string username_tried "only a username that matches a real account; anything else is never stored"
+        string username_key "HMAC-SHA256 of the typed identifier (rate-limit key); not reversible"
+        string outcome "success|failed|throttled|recovery_failed|reset_requested|reset_throttled"
         datetime occurred_at "rate limit: 5 failures / 15 min; success resets counter"
         inet ip "nullable"
     }
@@ -79,7 +80,6 @@ erDiagram
         string library_phone
         string library_email
         string logo_file "path; not a secret"
-        string timezone "Asia/Kolkata"
         int loan_days "30"
         int grace_days "7; applies to existing loans"
         int token_amount_paise "50000 for new cycles"
@@ -246,6 +246,8 @@ erDiagram
         string status "available|borrowed|damaged|lost|withdrawn"
         string shelf_location
         text notes
+        string legacy_ref "legacy/owner reference supplied at import; indexed when not blank"
+        datetime created_at
     }
     COPY_EVENT {
         bigint id PK
@@ -276,6 +278,7 @@ erDiagram
         string filename
         string sha256
         string status "validated|confirmed|rejected|expired"
+        bigint created_by_id FK "uploading owner"
         bool create_missing_categories "owner choice per import"
         string copy_id_mode "supplied|generate"
         bool isbn_warnings_acknowledged
@@ -380,6 +383,9 @@ erDiagram
 ```
 
 ## Modelling notes
+- **Implemented in Phases 1a-2 (conceptual model matches the code):** USER (single row, enforced by the `accounts_single_owner` unique expression index), LOGIN_EVENT, RECOVERY_CODE, AUDIT_EVENT, LIBRARY_SETTING (timezone is the Django `TIME_ZONE` setting, not a column), ID_SEQUENCE, MEMBER (+ created/updated timestamps), CATEGORY, BOOK_EDITION (+ created_at), ACQUISITION, BOOK_COPY, COPY_EVENT (its `loan_id` arrives with Phase 4), LABEL_LAYOUT, IMPORT_BATCH, IMPORT_ROW (+ `clean`). Everything else is later-phase.
+- **Database roles are not entities.** The two-role model (L6: `postgres` break-glass, `coven_owner` object owner and migration role, `coven_app` runtime role) is a PostgreSQL privilege configuration, not part of the data model, and adds no tables or relationships. Each table carries a security class in `core/dbsecurity.py` (MUTABLE, NO_DELETE, APPEND_ONLY, READ_ONLY); see `docs/DATABASE_SECURITY.md`. Classes of the implemented tables: NO_DELETE = USER, LIBRARY_SETTING, MEMBER, BOOK_EDITION, BOOK_COPY; APPEND_ONLY = AUDIT_EVENT, COPY_EVENT; MUTABLE = LOGIN_EVENT, RECOVERY_CODE, ID_SEQUENCE, CATEGORY, ACQUISITION, LABEL_LAYOUT, IMPORT_BATCH, IMPORT_ROW. Later-phase tables (e.g. the financial and loan tables) must be classified when they are created; an unclassified table gets no runtime access.
+- **Sensitive data:** `LOGIN_EVENT` and `AUDIT_EVENT` never store credentials. A typed username is kept only if it matches a real account; otherwise only a keyed hash is stored (a password typed into the username box is never persisted). Audit summaries are redacted by key and by value (`audit/redaction.py`).
 
 - **Transactions.** One `FINANCIAL_TRANSACTION` per financial event, each with a globally unique `internal_txn_id`. Human-readable `receipt_no` comes from one of four separate per-year sequences (subscription `SUB-YYYY-000001`, token collection `TOK-`, token refund `REF-`, adjustment `ADJ-`). Forfeitures and reversals are their own immutable transaction rows with internal IDs and a link to the original (`reverses_id` / ledger entry), and carry no customer receipt. There is **no subscription-fee refund kind** (fees are non-refundable) and subscription cancellation has no financial effect.
 - **Settled on creation.** A transaction is created already fully settled (`SUM(payment_entry) = amount` when cash flows). Drafts live in the form until confirmed. This implements "full amount remains due until completely paid; no activation until paid".
@@ -407,7 +413,7 @@ erDiagram
 | token_ledger_entry | partial UK `(cycle_id)` WHERE `entry_type='collection'`; partial UK `(cycle_id)` WHERE `entry_type IN ('refund','forfeiture')` (no double refund/forfeit per cycle); CHECK delta sign by type; full-balance rule under `SELECT … FOR UPDATE` on cycle; UK `reverses_id` |
 | pending_forfeiture | UK `(loan_id, setting_change_id)`; CHECK `status<>'declined' OR decline_reason<>''`; the daily day-8 job skips loans with a declined pending forfeiture |
 | notification_log | UK `dedupe_key` per event |
-| append-only tables | triggers reject UPDATE/DELETE on financial_transaction, payment_entry, token_ledger_entry, receipt_document, audit_event, loan_renewal, copy_event |
+| append-only tables | triggers reject UPDATE/DELETE on financial_transaction, payment_entry, token_ledger_entry, receipt_document, audit_event, loan_renewal, copy_event. **Implemented now:** audit_event and copy_event (triggers) plus `members_member.membership_no` immutability; the rest arrive with their phases. Independently, the runtime role has only SELECT/INSERT on APPEND_ONLY tables and never TRUNCATE (see `docs/DATABASE_SECURITY.md`) |
 
 ## Indexes
 Search: lower(member.full_name), mobile, membership_no, edition title/author/isbn, copy_code, internal_txn_id, receipt_no. Operational: `loan(due_on) WHERE status='active'`, `member_subscription(member_id, expires_on)`, `financial_transaction(member_id, effective_date)`, `(kind, effective_date)`, `payment_entry(paid_on, method)`, `login_event(occurred_at)`, `audit_event(entity_type, entity_id)`, `backup_run(started_at)`, `notification_log(status, event_type)`.

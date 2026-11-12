@@ -14,9 +14,9 @@ urlpatterns = [
     path("copies/<int:pk>/", views.copy_detail, name="copy_detail"),
     path("categories/", views.category_list, name="category_list"),
     path("label-layouts/", views.layout_list, name="layout_list"),
+    path("label-layouts/<int:pk>/default/", views.layout_set_default, name="layout_set_default"),
     path("import/", import_views.import_start, name="import_start"),
     path("import/template.xlsx", import_views.template_download, name="import_template"),
     path("import/<int:pk>/", import_views.import_preview, name="import_preview"),
-    path("import/<int:pk>/confirm/", import_views.import_confirm, name="import_confirm"),
     path("import/<int:pk>/errors.csv", import_views.error_report, name="import_errors"),
 ]

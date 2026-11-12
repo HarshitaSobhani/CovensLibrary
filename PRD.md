@@ -36,7 +36,7 @@ Owner: the only authenticated user, full access.
 - Private login; Django password hashing; session authentication; logout.
 - The owner authenticates at least once each day. Sessions expire at the end of the day (Asia/Kolkata). **There is no limit on logins per day**: logging out, or a lost or expired session, never prevents another login.
 - **Failed-login protection:** every failed login is audit-logged. After **5 failed attempts within 15 minutes**, further attempts are rate-limited until the 15-minute window expires; a successful login resets the counter. **There is no account lockout.**
-- **Password recovery:** email-based reset; if SMTP is unavailable, local command-line recovery using a recovery code that is single-use, stored hashed, displayed once, and expires after 15 minutes.
+- **Password recovery:** email-based reset; if SMTP is unavailable, local command-line recovery using a recovery code that is single-use, stored hashed, displayed once, and expires after 15 minutes; generating a new code immediately invalidates any earlier unused code (B48).
 - Every view is protected except login and required static files. No public data.
 
 ### 4.3 Security requirements
@@ -89,7 +89,7 @@ Editions and physical copies are separate entities; the dashboard reports both. 
 - Categories are owner-managed.
 
 ### 6.4 Excel import
-Books and copies; downloadable template. Workflow: select file → validate/map columns → preview with errors and warnings → owner decisions → owner confirmation → execution → summary and downloadable error report. Original rows are preserved in staging.
+Books and copies; downloadable template. Workflow: select file → validate/map columns → preview with errors and warnings → owner decisions → owner confirmation → execution → summary and downloadable error report. Original rows are preserved in staging. Validation rules: Unit Cost with more than two decimal places is rejected (B45); supplied copy IDs matching `COV-C-<number>` are reserved and rejected (B46); Publication Year must be 1000 to the next calendar year (B47).
 - Per import the owner chooses whether to **create missing categories or reject** affected rows.
 - Per import the owner chooses whether to **use supplied legacy copy IDs or generate** them; conflicts are detected and duplicate copy IDs prevented.
 - Duplicate ISBNs produce warnings; the owner decides whether to continue; no automatic merging or silent discarding.

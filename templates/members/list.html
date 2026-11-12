@@ -17,6 +17,6 @@
     {% empty %}<tr><td colspan="4" class="text-muted-token">No members found.</td></tr>{% endfor %}
     </tbody>
   </table>
-  {% include "partials/pagination.html" with qs="q="|add:q|add:"&status="|add:status|add:"&" %}
+  {% include "partials/pagination.html" %}
 </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 # RISKS — Coven's Library
 
-Likelihood (L) / Impact (I): H/M/L. All risks open (no implementation exists). Rule references use `OPEN_QUESTIONS.md` identifiers.
+Likelihood (L) / Impact (I): H/M/L. Phases 1a-2 and L6 are implemented; risks below stay open until mitigations are verified in the relevant phase. Rule references use `OPEN_QUESTIONS.md` identifiers.
 
 ## Backup, recovery, environment
 | ID | Risk | L | I | Mitigation |
@@ -36,7 +36,8 @@ Likelihood (L) / Impact (I): H/M/L. All risks open (no implementation exists). R
 | ID | Risk | L | I | Mitigation |
 |---|---|---|---|---|
 | R-23 | **Daily authentication/session handling**: sessions ending at midnight Asia/Kolkata mid-work; timezone mistakes. | M | M | Session expiry computed in library timezone; warn before expiry; unlimited re-login. |
-| R-24 | **Login rate limiting** (5 failures/15 min) causes owner friction or is bypassed; no lockout by decision. | L | M | Success resets counter; failures audit-logged; localhost-only binding. |
+| R-24 | **Login rate limiting** (5 failures/15 min) causes owner friction or is bypassed; no lockout by decision. | L | M | Success resets counter; failures audit-logged; localhost-only binding; concurrency-safe via advisory locks (tested with 24 simultaneous attempts). |
+| R-25a | **Historical plaintext passwords** in audit/login records written by pre-remediation code (append-only, cannot be removed by the application). | L | H | None exist in the development database (0 rows checked); any other environment that ran the earlier code needs an owner-led response (change those passwords). Decision D-3 in OPEN_QUESTIONS.md. |
 | R-25 | **Password reset depends on SMTP**; fallback = local CLI + recovery code (single-use, hashed, shown once, 15-minute expiry — an owner who misses the window must regenerate it). | M | H | Test-email action; recovery procedure documented; code never logged. |
 | R-26 | **SMTP acceptance ≠ delivery**; automatic emails sent wrongly, repeatedly or to wrong address; retry storms (retries 5 min after the initial failure, 30 min after retry 1, 2 h after retry 2; then failed, no indefinite retry) or missed 09:00 reminders when the Dell is off. | H | M | Statuses never say delivered; one notification record per event with dedupe key; retries reuse it; missing email recorded as skipped with reason; failed emails on dashboard; catch-up at next launch; credentials in environment only. |
 | R-27 | **WhatsApp link misuse / bad numbers.** | L | M | Never automatic; E.164 validation; URL-encoding; restricted placeholders. |
@@ -54,3 +55,10 @@ Likelihood (L) / Impact (I): H/M/L. All risks open (no implementation exists). R
 | R-35 | **Django/Python version drift.** | L | M | Verify and pin at Phase 1. |
 | R-36 | **Repo hygiene**: `.DS_Store` tracked, no `.gitignore`. | H | L | Phase 1a with approval. |
 | R-37 | **Documentation drift**: obsolete rules followed by future sessions. | M | H | Single authoritative register; CLAUDE.md authority order; consistency review per phase. |
+
+## Database security (L6)
+| ID | Risk | L | I | Mitigation |
+|---|---|---|---|---|
+| R-38 | Superuser or OS administrator bypasses all database protections; `.env.owner` is plaintext on the dev Mac. | L | H | `postgres` break-glass only; 0600 git-ignored owner file; owner password absent from the Dell except at upgrades; `docs/DATABASE_SECURITY.md`. |
+| R-39 | New table left unclassified or grants forgotten after a migration. | M | M | Fail closed (`coven.E001`); post-migrate grant hook; start-up assertion; tests for registry completeness. |
+| R-40 | Owner role can drop append-only triggers. | L | M | Owner used only for migrations; runtime cannot alter them; `check_db_security` verifies triggers. |

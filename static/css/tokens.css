@@ -1,14 +1,20 @@
 /* Provisional design tokens (replaceable). Palette: charcoal, terracotta, parchment, muted green.
-   Contrast of text pairs is verified by core/tests/test_tokens.py (WCAG AA >= 4.5:1). */
+   Text pairs are verified for WCAG AA (>= 4.5:1) and interface boundaries / focus for 3:1 by
+   core/tests/test_tokens.py; core/tests/test_theme_wiring.py checks the components use them. */
 :root {
   --bg: #f6efe2;
   --surface: #fbf7ee;
+  --surface-2: #efe6d3;
   --text: #1f1d1a;
   --text-muted: #6b665a;
   --primary: #a8431a;
   --on-primary: #ffffff;
+  --link: #8f3a16;
+  --danger: #a61e2d;
   --accent-green: #4f6b4a;
   --border: #d9cfba;
+  --input-bg: #fffdf8;
+  --input-border: #7d7766;
   --font-display: Georgia, "Times New Roman", serif;
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --sidebar-bg: #1f1d1a;
@@ -17,12 +23,17 @@
 [data-theme="dark"] {
   --bg: #141512;
   --surface: #1d1f1b;
+  --surface-2: #262922;
   --text: #efe7d6;
   --text-muted: #a8a294;
   --primary: #e8763c;
   --on-primary: #141512;
+  --link: #e8763c;
+  --danger: #ff8f8f;
   --accent-green: #8fae88;
   --border: #34372f;
+  --input-bg: #141512;
+  --input-border: #8a8577;
   --sidebar-bg: #0e0f0d;
   --sidebar-text: #efe7d6;
 }

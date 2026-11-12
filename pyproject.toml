@@ -6,6 +6,10 @@ extend-exclude = [".venv", "migrations"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "DJ"]
 
+[tool.ruff.lint.per-file-ignores]
+# long SQL / embedded script lines in the privilege tests are clearer unwrapped
+"core/tests/test_runtime_privileges.py" = ["E501"]
+
 [tool.ruff.format]
 quote-style = "double"
 

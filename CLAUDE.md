@@ -4,7 +4,7 @@ Private, owner-only library management web app for one physical library (~50 mem
 Authority order: `OPEN_QUESTIONS.md` §1 (decision register) → `PRD.md` → `docs/*` → `Claude_Code_Master_Prompt.md`.
 
 ## Status
-Phases 1a, 1c, 1b and 2 (2a members, 2b catalogue, 2c Excel import) are implemented and verified on PostgreSQL 16 (see `docs/IMPLEMENTATION_LOG.md`). Phase 3 and later are **not started** and need explicit owner approval. Windows 11 runtime testing is pending (Phase 7c).
+Phases 1a, 1c, 1b and 2 (2a members, 2b catalogue, 2c Excel import) are implemented and verified on PostgreSQL 16 (see `docs/IMPLEMENTATION_LOG.md`). L6 two-role database hardening is implemented (`docs/DATABASE_SECURITY.md`). Phase 3 and later are **not started** and need explicit owner approval. Windows 11 runtime testing is pending (Phase 7c).
 
 ## Hard rules
 - Git: commits are authored by the owner (Harshita Sobhani) only; the owner authorised one push of the Phase 1a-2 work directly to `main`. No other commits, pushes, branches or PRs unless the owner explicitly asks. Never alter Git history.
@@ -42,13 +42,17 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements/dev.txt
 cp .env.example .env   # then fill real local values
 createdb coven_library
-python manage.py migrate
-python manage.py createsuperuser
+python manage.py migrate --settings=config.settings.migrate   # owner role; runtime role is refused
+python manage.py check_db_security
+python manage.py create_owner --username <name> --email <address>
 python manage.py runserver 127.0.0.1:8000
 python manage.py test --settings=config.settings.test
 python manage.py makemigrations --check --dry-run
 ruff check . && ruff format --check .
 ```
+
+## Database roles (L6, implemented on macOS; Windows 11 unverified)
+`postgres` break-glass only; `coven_owner` owns objects and runs migrations/grants/restores; `coven_app` is runtime only. Table classes MUTABLE / NO_DELETE / APPEND_ONLY / READ_ONLY in `core/dbsecurity.py`; unclassified tables fail closed; `ALTER DEFAULT PRIVILEGES` only revokes (nothing is granted automatically); every new table must be classified. Owner credentials live only in a git-ignored, plaintext `.env.owner` (0600; never in runtime config, backups or logs). After any restore: provision roles first, then `apply_db_grants`. Details: `docs/DATABASE_SECURITY.md`.
 
 ## Brand
 Lettering is image artwork, not a font; usable as logo art. Legible complementary UI font required. Palette provisional (charcoal, terracotta, cream, muted green). Originals untouched; derived assets separate.

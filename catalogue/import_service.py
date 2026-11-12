@@ -3,22 +3,50 @@
 import csv
 import hashlib
 import io
+import re
 import zipfile
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-from django.db import transaction
+from django.db import DatabaseError, transaction
+from django.utils import timezone
 from openpyxl import Workbook, load_workbook
 
 from audit.services import record
 from core.errors import RuleViolation
 
 from . import services
-from .models import Acquisition, BookCopy, Category, ImportBatch, ImportRow
+from .models import Acquisition, BookCopy, BookEdition, Category, ImportBatch, ImportRow
 
-MAX_BYTES = 5 * 1024 * 1024
-MAX_ROWS = 2000
+MAX_BYTES = 5 * 1024 * 1024  # compressed upload size
+MAX_UNCOMPRESSED = 50 * 1024 * 1024  # total decompressed size of all workbook parts
+MAX_ZIP_ENTRIES = 500
+MAX_ROWS = 2000  # data rows
+MAX_SCAN_ROWS = 10000  # physical rows read (stops runaway empty/formatted rows)
+MAX_COLS = 60
 MAX_COPIES_PER_ROW = 100
+MAX_LONG_TEXT = 5000  # Description / Notes are unbounded in the database; capped defensively
+MAX_COST_PAISE = 2_147_483_647  # PositiveIntegerField limit (about INR 21,474,836.47)
+GENERATED_CODE = re.compile(r"^COV-C-\d+$")  # reserved for generated copy IDs
+CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def _limit(model, field):
+    return model._meta.get_field(field).max_length
+
+
+# Limits come straight from the model fields so preview and database can never disagree.
+TEXT_LIMITS = {
+    "Title": _limit(BookEdition, "title"),
+    "Author": _limit(BookEdition, "author"),
+    "Publisher": _limit(BookEdition, "publisher"),
+    "Edition": _limit(BookEdition, "edition_label"),
+    "Category": _limit(Category, "name"),
+    "Donor Name": _limit(Acquisition, "donor_name"),
+    "Shelf Location": _limit(BookCopy, "shelf_location"),
+}
+COPY_CODE_MAX = min(_limit(BookCopy, "copy_code"), _limit(BookCopy, "barcode"))
+LEGACY_REF_MAX = _limit(BookCopy, "legacy_ref")
 SHEET = "Books"
 COLUMNS = [
     "Title",
@@ -93,47 +121,85 @@ def _text(value):
         return str(int(value))
     if isinstance(value, (datetime, date)):
         return value.date().isoformat() if isinstance(value, datetime) else value.isoformat()
-    return str(value).strip()
+    return str(value).replace("\x00", "").strip()
 
 
 def read_workbook(upload):
-    """Validate the upload and return (sha256, rows) where rows = [(row_number, {column: text})]."""
+    """Validate the upload and return (sha256, rows) where rows = [(row_number, {column: text})].
+
+    Processing is bounded: compressed size, decompressed size, zip entry count, scanned rows,
+    data rows and columns are all capped, and workbooks carrying macros are refused.
+    """
     name = getattr(upload, "name", "") or ""
     if not name.lower().endswith(".xlsx"):
         raise RuleViolation(
             "file_type", "Upload an Excel .xlsx file (macro or legacy formats are not accepted)."
         )
-    content = upload.read()
+    size = getattr(upload, "size", None)
+    if size is not None and size > MAX_BYTES:
+        raise RuleViolation("file_size", "The file is larger than 5 MB.")
+    content = upload.read(MAX_BYTES + 1)  # never read more than the limit into memory
     if len(content) > MAX_BYTES:
         raise RuleViolation("file_size", "The file is larger than 5 MB.")
     if not content.startswith(b"PK") or not zipfile.is_zipfile(io.BytesIO(content)):
         raise RuleViolation("file_type", "The file is not a valid .xlsx workbook.")
+    _check_zip_bounds(content)
     try:
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     except Exception:
         raise RuleViolation("file_type", "The workbook could not be read.") from None
-    if SHEET not in wb.sheetnames:
-        raise RuleViolation("sheet_missing", f"The workbook must contain a sheet named '{SHEET}'.")
-    ws = wb[SHEET]
-    iterator = ws.iter_rows(values_only=True)
-    header = next(iterator, None)
-    if not header:
-        raise RuleViolation("header_missing", "The Books sheet is empty.")
-    names = [_text(h) for h in header]
-    missing = [c for c in REQUIRED_COLUMNS if c not in names]
-    if missing:
-        raise RuleViolation("header_missing", f"Missing required column(s): {', '.join(missing)}.")
-    rows = []
-    for offset, values in enumerate(iterator, start=2):
-        record_ = {n: _text(v) for n, v in zip(names, values, strict=False) if n}
-        if not any(record_.values()):
-            continue
-        rows.append((offset, record_))
-        if len(rows) > MAX_ROWS:
-            raise RuleViolation("too_many_rows", f"The file has more than {MAX_ROWS} data rows.")
+    try:
+        if SHEET not in wb.sheetnames:
+            raise RuleViolation(
+                "sheet_missing", f"The workbook must contain a sheet named '{SHEET}'."
+            )
+        iterator = wb[SHEET].iter_rows(values_only=True, max_col=MAX_COLS)
+        header = next(iterator, None)
+        if not header:
+            raise RuleViolation("header_missing", "The Books sheet is empty.")
+        names = [_text(h) for h in header]
+        missing = [c for c in REQUIRED_COLUMNS if c not in names]
+        if missing:
+            raise RuleViolation(
+                "header_missing", f"Missing required column(s): {', '.join(missing)}."
+            )
+        rows = []
+        for scanned, values in enumerate(iterator, start=2):
+            if scanned > MAX_SCAN_ROWS:
+                raise RuleViolation(
+                    "too_many_rows", f"The sheet has more than {MAX_SCAN_ROWS} rows."
+                )
+            record_ = {n: _text(v) for n, v in zip(names, values, strict=False) if n}
+            if not any(record_.values()):
+                continue
+            rows.append((scanned, record_))
+            if len(rows) > MAX_ROWS:
+                raise RuleViolation(
+                    "too_many_rows", f"The file has more than {MAX_ROWS} data rows."
+                )
+    finally:
+        wb.close()
     if not rows:
         raise RuleViolation("no_rows", "The Books sheet has no data rows.")
     return hashlib.sha256(content).hexdigest(), rows
+
+
+def _check_zip_bounds(content):
+    """Reject decompression bombs and macro-carrying workbooks before openpyxl sees them."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            infos = zf.infolist()
+    except zipfile.BadZipFile:
+        raise RuleViolation("file_type", "The file is not a valid .xlsx workbook.") from None
+    if len(infos) > MAX_ZIP_ENTRIES:
+        raise RuleViolation("file_complex", "The workbook has too many internal parts.")
+    if sum(i.file_size for i in infos) > MAX_UNCOMPRESSED:
+        raise RuleViolation("file_complex", "The workbook expands to an unreasonable size.")
+    for info in infos:
+        if info.file_size > 1_000_000 and info.file_size / max(1, info.compress_size) > 200:
+            raise RuleViolation("file_complex", "The workbook has a suspicious compression ratio.")
+        if info.filename.lower().endswith("vbaproject.bin"):
+            raise RuleViolation("file_type", "Workbooks containing macros are not accepted.")
 
 
 # ---------- validation ----------
@@ -145,36 +211,82 @@ def _split_ids(text):
     return [p.strip() for p in text.replace(";", ",").split(",") if p.strip()]
 
 
+def _finite_decimal(text, field, errors, code):
+    """Parse a finite, sanely-sized number or record an error and return None."""
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        errors.append(_issue(field, "Enter a number.", code))
+        return None
+    if not value.is_finite() or abs(value.adjusted()) > 12:
+        errors.append(_issue(field, "Enter a finite, reasonably sized number.", code))
+        return None
+    return value
+
+
+def _whole_number(text, field, errors, code, low, high):
+    value = _finite_decimal(text, field, errors, code)
+    if value is None:
+        return None
+    if value != value.to_integral_value():
+        errors.append(_issue(field, "Enter a whole number.", code))
+        return None
+    number = int(value)
+    if not low <= number <= high:
+        errors.append(_issue(field, f"Enter a number from {low} to {high}.", code))
+        return None
+    return number
+
+
+def _length_check(raw, clean, column, key, errors, limit=None):
+    value = raw.get(column, "")
+    limit = limit or TEXT_LIMITS[column]
+    if len(value) > limit:
+        errors.append(
+            _issue(column, f"Too long ({len(value)} characters; maximum {limit}).", "too_long")
+        )
+    if CONTROL_CHARS.search(value):
+        errors.append(_issue(column, "Contains control characters.", "control_chars"))
+    clean[key] = value
+
+
 def validate_row(raw, batch, category_names):
-    """Return (clean, errors, warnings) for one raw row under the batch's owner choices."""
-    errors, warnings = [], []
-    clean = {}
-    title = raw.get("Title", "")
-    if not title:
+    """Return (clean, errors, warnings) for one raw row under the batch's owner choices.
+
+    Never raises: anything unexpected becomes a row error so the preview and the confirmation
+    step always agree (a row is only 'valid' if execution cannot fail for a predictable reason).
+    """
+    errors, warnings, clean = [], [], {}
+    try:
+        _validate_row(raw, batch, category_names, clean, errors, warnings)
+    except Exception:  # defensive: report instead of crashing the whole upload
+        errors.append(_issue("Row", "This row could not be processed.", "row_unprocessable"))
+    return clean, errors, warnings
+
+
+def _validate_row(raw, batch, category_names, clean, errors, warnings):
+    _length_check(raw, clean, "Title", "title", errors)
+    if not clean["title"]:
         errors.append(_issue("Title", "Title is required.", "title_required"))
-    clean["title"] = title
-    clean["author"] = raw.get("Author", "")
-    for key, col in (
-        ("publisher", "Publisher"),
-        ("edition_label", "Edition"),
-        ("description", "Description"),
-        ("notes", "Notes"),
-        ("donor_name", "Donor Name"),
-        ("shelf_location", "Shelf Location"),
-    ):
-        clean[key] = raw.get(col, "")
-    # year
-    year_text = raw.get("Publication Year", "")
-    clean["publication_year"] = None
-    if year_text:
-        try:
-            year = int(float(year_text))
-            services._check_year(year)
-            clean["publication_year"] = year
-        except (ValueError, RuleViolation):
+    _length_check(raw, clean, "Author", "author", errors)
+    _length_check(raw, clean, "Publisher", "publisher", errors)
+    _length_check(raw, clean, "Edition", "edition_label", errors)
+    _length_check(raw, clean, "Donor Name", "donor_name", errors)
+    _length_check(raw, clean, "Shelf Location", "shelf_location", errors)
+    for column, key in (("Description", "description"), ("Notes", "notes")):
+        value = raw.get(column, "")
+        if len(value) > MAX_LONG_TEXT:
             errors.append(
-                _issue("Publication Year", "Enter a plausible four-digit year.", "year_invalid")
+                _issue(column, f"Too long (maximum {MAX_LONG_TEXT} characters).", "too_long")
             )
+        clean[key] = value
+    # publication year
+    clean["publication_year"] = None
+    if raw.get("Publication Year", ""):
+        low, high = 1000, timezone.localdate().year + 1
+        clean["publication_year"] = _whole_number(
+            raw["Publication Year"], "Publication Year", errors, "year_invalid", low, high
+        )
     # isbn
     try:
         clean["isbn"] = services.clean_isbn(raw.get("ISBN", ""))
@@ -186,6 +298,10 @@ def validate_row(raw, batch, category_names):
     clean["category"] = category
     if not category:
         errors.append(_issue("Category", "Category is required.", "category_required"))
+    elif len(category) > TEXT_LIMITS["Category"]:
+        errors.append(
+            _issue("Category", f"Too long (maximum {TEXT_LIMITS['Category']}).", "too_long")
+        )
     elif category.lower() not in category_names:
         if batch.create_missing_categories:
             warnings.append(
@@ -207,58 +323,86 @@ def validate_row(raw, batch, category_names):
             _issue("Acquisition Source", "Use 'purchased' or 'donated'.", "source_invalid")
         )
     clean["source"] = source
-    acquired = raw.get("Acquired On", "")
     clean["acquired_on"] = None
-    if acquired:
+    if raw.get("Acquired On", ""):
         try:
-            clean["acquired_on"] = date.fromisoformat(acquired[:10]).isoformat()
+            clean["acquired_on"] = date.fromisoformat(raw["Acquired On"][:10]).isoformat()
         except ValueError:
             errors.append(_issue("Acquired On", "Use the date format YYYY-MM-DD.", "date_invalid"))
-    cost = raw.get("Unit Cost (INR)", "")
     clean["unit_cost_paise"] = None
-    if cost:
-        try:
-            value = Decimal(cost)
-            if value < 0:
-                raise InvalidOperation
-            clean["unit_cost_paise"] = int(value * 100)
-        except InvalidOperation:
-            errors.append(_issue("Unit Cost (INR)", "Enter a non-negative amount.", "cost_invalid"))
+    if raw.get("Unit Cost (INR)", ""):
+        cost = _finite_decimal(raw["Unit Cost (INR)"], "Unit Cost (INR)", errors, "cost_invalid")
+        if cost is not None:
+            if cost < 0:
+                errors.append(
+                    _issue("Unit Cost (INR)", "Enter a non-negative amount.", "cost_invalid")
+                )
+            elif cost != cost.quantize(Decimal("0.01")):
+                errors.append(
+                    _issue("Unit Cost (INR)", "Use at most two decimal places.", "cost_invalid")
+                )
+            elif cost * 100 > MAX_COST_PAISE:
+                errors.append(_issue("Unit Cost (INR)", "Amount is too large.", "cost_invalid"))
+            else:
+                clean["unit_cost_paise"] = int(cost * 100)
     # copies
-    copies_text = raw.get("Copies", "") or "1"
-    try:
-        copies = int(float(copies_text))
-        if not 1 <= copies <= MAX_COPIES_PER_ROW:
-            raise ValueError
-    except ValueError:
-        copies = 0
-        errors.append(
-            _issue(
-                "Copies",
-                f"Copies must be a whole number from 1 to {MAX_COPIES_PER_ROW}.",
-                "copies_invalid",
-            )
-        )
-    clean["copies"] = copies
+    copies = _whole_number(
+        raw.get("Copies", "") or "1", "Copies", errors, "copies_invalid", 1, MAX_COPIES_PER_ROW
+    )
+    clean["copies"] = copies or 0
     ids = _split_ids(raw.get("Legacy Copy IDs", ""))
     clean["legacy_ids"] = ids
-    if batch.copy_id_mode == ImportBatch.CopyIdMode.SUPPLIED:
-        if copies and len(ids) != copies:
+    supplied = batch.copy_id_mode == ImportBatch.CopyIdMode.SUPPLIED
+    if copies:
+        if supplied and len(ids) != copies:
             errors.append(
                 _issue("Legacy Copy IDs", "Supply exactly one copy ID per copy.", "ids_count")
             )
-    elif ids and copies and len(ids) != copies:
-        errors.append(
-            _issue("Legacy Copy IDs", "Supply one reference per copy or leave blank.", "ids_count")
-        )
+        elif not supplied and ids and len(ids) != copies:
+            errors.append(
+                _issue(
+                    "Legacy Copy IDs", "Supply one reference per copy or leave blank.", "ids_count"
+                )
+            )
     if len(set(ids)) != len(ids):
         errors.append(_issue("Legacy Copy IDs", "Copy IDs repeat within the row.", "ids_duplicate"))
+    for cid in ids:
+        limit = COPY_CODE_MAX if supplied else LEGACY_REF_MAX
+        if len(cid) > limit:
+            errors.append(
+                _issue(
+                    "Legacy Copy IDs", f"'{cid[:20]}...' is too long (maximum {limit}).", "too_long"
+                )
+            )
+        if CONTROL_CHARS.search(cid):
+            errors.append(
+                _issue(
+                    "Legacy Copy IDs",
+                    "Copy IDs cannot contain control characters.",
+                    "control_chars",
+                )
+            )
+        if supplied and not (cid.isascii() and cid.isprintable()):
+            errors.append(
+                _issue(
+                    "Legacy Copy IDs",
+                    f"'{cid[:20]}' must use printable ASCII (barcode requirement).",
+                    "id_charset",
+                )
+            )
+        if supplied and GENERATED_CODE.match(cid):
+            errors.append(
+                _issue(
+                    "Legacy Copy IDs",
+                    f"'{cid}' uses the format reserved for generated copy IDs.",
+                    "id_reserved",
+                )
+            )
     # ISBN duplicates in database (warning)
     if clean["isbn"] and services.find_isbn_duplicates(clean["isbn"]).exists():
         warnings.append(
             _issue("ISBN", "An existing edition already has this ISBN.", "isbn_duplicate")
         )
-    return clean, errors, warnings
 
 
 def _cross_row_checks(rows, batch):
@@ -405,6 +549,17 @@ def execute_import(batch, *, actor, accept_excluded=False):
             f"{summary['invalid']} row(s) with errors will be left out. "
             "Confirm to import the valid rows.",
         )
+    try:
+        return _run_import(batch, rows, summary, actor)
+    except DatabaseError as exc:  # unforeseen: roll everything back and report cleanly
+        raise RuleViolation(
+            "import_failed",
+            "The import could not be completed and nothing was changed. "
+            "Please review the file and try again.",
+        ) from exc
+
+
+def _run_import(batch, rows, summary, actor):
     created_editions = created_copies = created_categories = 0
     for row in rows:
         if not row.is_valid:
@@ -461,8 +616,12 @@ def execute_import(batch, *, actor, accept_excluded=False):
 
 
 def _csv_safe(value):
+    """Neutralise spreadsheet formulas, including ones hidden behind tabs, CR/LF or whitespace."""
     text = str(value)
-    return "'" + text if text[:1] in ("=", "+", "-", "@") else text
+    stripped = text.lstrip(" \t\r\n\u00a0\ufeff\u200b")
+    if text[:1] in ("\t", "\r", "\n") or stripped[:1] in ("=", "+", "-", "@"):
+        return "'" + text
+    return text
 
 
 def error_report_csv(batch):

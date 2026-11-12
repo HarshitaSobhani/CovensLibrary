@@ -52,3 +52,47 @@ Migrations were applied forward on an empty PostgreSQL database, reversed to zer
 - Coverage gaps: some view error branches (members views 68%).
 - `LoginEvent.username_tried` stores the attempted username (no passwords).
 - Failed or skipped tests: none.
+
+---
+
+# Remediation pass after the Phase 1-2 acceptance review (uncommitted)
+
+Scope authorised: M1-M6 and selected low findings; no Phase 3. Nothing here is committed; the working tree holds the changes for owner review.
+
+| Finding | Status | What changed |
+|---|---|---|
+| M4 Sensitive data | **Fixed** | A typed username is stored only if it matches a real account; otherwise only an HMAC key (rate-limit use) is kept. `audit/redaction.py` redacts keys (password, secret, api_key, otp, recovery_code, code_hash, passphrase, token, reset_token, authorization, key, session and variants) and credential-shaped values, recursively, without touching business data. Historical rows were not modified. |
+| M1 Import validation | **Fixed** | Lengths come from the model fields; infinity/NaN/overflow/non-integers/over-large numbers, two-decimal costs, printable-ASCII and non-reserved supplied copy IDs are validated; unforeseen database errors roll back and give a clear message. Preview "valid" now equals "execution succeeds" (boundary test imports rows at every limit). |
+| M2 Rate-limit race | **Fixed** | Check, authentication and recording run in one transaction under PostgreSQL advisory locks (identifier key + client address). 24 simultaneous bad logins -> exactly 5 evaluated, 19 throttled. |
+| M3 Password reset | **Fixed** | Requests and completions audited (no address/token/link); 3 requests per 15 minutes per email key and per address, identical generic response; lifetime explicitly set and tested (now 3,600 s, see the final adjustments below). Throttle number recorded as owner decision D-2. |
+| M5 Contrast/theming | **Fixed** | Link, danger, table, header, input, border and focus colours come from tokens; tests cover token contrast (text 4.5:1, boundaries/focus 3:1) and the wiring. Browser measurement (not part of the suite): links 5.61-7.05:1, text 13.5-15.7:1, tables and inputs follow the theme, no horizontal overflow at 390 px. |
+| M6 Dev database | **Done** | `coven_library` (local cluster, 127.0.0.1:5432, 0 users/0 audit/0 login rows, no other sessions) backed up with `pg_dump -Fc` to the session scratch directory outside the repository (41,728 bytes, readable), then 6 migrations applied (0 unapplied afterwards). |
+| L1 Responsive | Fixed | Sidebar stacks below 768 px. |
+| L2 Label default | Fixed | New default replaces the old; "Make default" action. |
+| L3 Query parameters | Fixed | Controlled messages; also found and fixed a NUL-byte search term that caused HTTP 500. |
+| L4 Pagination | Fixed | Parameters URL-encoded. |
+| L5 Duplicate-mobile race | Fixed | Clean validation error; sequence stays gap-free. |
+| L7 Single owner | Fixed | `accounts_single_owner` constraint + `create_owner` command. |
+| L8 Startup | Fixed | Explicit settings selection in `manage.py`, `.env.example`, `docs/DEVELOPMENT.md`. |
+| L9 Docs | Fixed | ERD, architecture (§10, §14), open decisions. |
+| L10 CSV | Fixed | Tabs, CR/LF, spaces, NBSP, BOM, zero-width space handled. |
+| L11 Upload | Partly hardened | Read bounded to 5 MB, size checked before reading, decompressed-size/entry/ratio limits, macro payload refused, scanned-row and column caps. The 5 MB content is still held in memory (acceptable for an owner-only app). |
+| L12 Minor | Mostly fixed | Library-timezone year, cost decimals, ISBN-10/13 duplicates, dead route removed, preview paging, newest recovery code supersedes earlier ones. Not done: pruning of old login events/sessions (`clearsessions` documented). |
+| L6 DB-level delete/TRUNCATE protection | **Resolved** | See "L6 database security hardening" below and `docs/DATABASE_SECURITY.md`. |
+
+## Verification (actual runs, isolated PostgreSQL test databases)
+- `manage.py test --settings=config.settings.test`: **194 tests, 0 failed, 0 skipped**, no warnings (was 117; 77 added).
+- Concurrency tests (rate limit, duplicate mobile, sequences) run five times in a row: all passed.
+- `manage.py check`, `makemigrations --check --dry-run`: clean. `ruff check` / `ruff format --check`: clean (89 files).
+- Coverage 92% overall (accounts/views 100%, ratelimit 100%, import_service 95%).
+- Mutation spot-checks: removing the advisory lock, the username filter, the title length limit or the `key` redaction rule each made the new tests fail.
+- Browser measurement of the rendered pages (links, tables, inputs, overflow) was run manually with a throwaway script outside the repository.
+
+## Final pre-acceptance adjustment: password-reset lifetime
+Owner decision: reset links now expire after **3,600 seconds (1 hour)** (was Django's 3-day default). Regression tests added/updated in `accounts/tests/test_security.py`: exact one-hour boundary (valid at +3,590 s, invalid at +3,610 s; the old 3-day window is closed), an expired link cannot reset the password (original link and a link opened in time but submitted late), a used link cannot be reused (GET, POST, fresh client), unknown/known/throttled/expired/invalid cases are indistinguishable to the requester, the throttle is still 3 requests per 15 minutes, and a full flow leaves no address, uid, token, link or password in login events or audit records. Changing the setting back to 259,200 makes these tests fail.
+
+## Final review conditions (owner-approved)
+B45-B48 recorded in `OPEN_QUESTIONS.md` (import cost decimals, reserved `COV-C-` IDs, publication year range, recovery-code supersession). Corrections: `.env.owner.example` un-ignored; provisioning script no longer accepts passwords as variables (use interactive `\password`); conversion script refuses any database except `coven_library`; rollback restricted to immediately after conversion; `ALTER DEFAULT PRIVILEGES` documented as revoke-only; `.env.example` marked development-only.
+
+## L6 database security hardening (two-role model)
+Implemented per owner authorisation. Design, matrices, provisioning and recovery: `docs/DATABASE_SECURITY.md`. A fourth table class, READ_ONLY, was added for Django framework tables. The earlier "L6 unresolved" row is now resolved: TRUNCATE is never granted to the runtime role; members, editions and copies are no-delete; audit and copy-event tables are insert-only. Existing dev database converted (backed up, test-restored, ownership reassigned to `coven_owner`, `core.0002` applied). Verification: see the L6 report (266 tests OK as `coven_owner`; privilege checks as `coven_app`; coverage 91%). Windows 11 and clean-machine recovery are not verified.

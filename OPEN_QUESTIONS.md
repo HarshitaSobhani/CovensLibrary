@@ -92,6 +92,10 @@ Also confirmed: split cash/UPI payments settle one obligation (full amount remai
 | B40 | Owner connects Google account and selects the Drive folder; `drive.file` scope; replacement computer needs fresh consent. |
 | B41 | Full export = ZIP with CSV, Excel and manifest. |
 | B43 / N8 | Default dashboard sections: overdue books, upcoming subscription expiries, backup failures, failed emails, damaged/lost book decisions, token forfeitures, members requiring attention. **No Pending Payments section.** The owner configures visibility and the **criteria** of "Members requiring attention"; default criteria (accepted by the owner): (1) expired subscriptions; (2) borrowing suspended because the ₹500 token was forfeited; (3) overdue books; (4) unresolved damaged or lost book cases; (5) pending owner decisions; (6) incomplete membership records. Criteria and visibility remain owner-configurable. |
+| B45 | **Import cost:** a Unit Cost (INR) with more than two decimal places is rejected (no silent rounding or truncation). |
+| B46 | **Import copy IDs:** supplied copy IDs matching `COV-C-<number>` are reserved for generated IDs and are rejected. |
+| B47 | **Publication year** must be between 1000 and the next calendar year (inclusive). |
+| B48 | **Recovery codes:** generating a new recovery code immediately invalidates all earlier unused recovery codes; only the newest is valid (single-use, hashed, shown once, 15-minute expiry still apply). |
 | B44 | Brand references preserved; derived assets and design tokens separate; lettering artwork is not a font. |
 Dependency decision: Python `keyring` (Windows Credential Manager access) is **approved**. Retention 30 daily + 12 monthly. Not mandatory: Docker, Celery, Redis, React.
 
@@ -123,3 +127,18 @@ Requirements: no duplicate notification for the same event; retries never create
 # 2. Remaining unresolved items
 
 **None.** All business-policy decisions and specification questions are decided. No genuine specification decision is currently outstanding.
+
+---
+
+# 3. Owner decisions pending (implementation defaults in use)
+
+These are not business-policy blockers; the current behaviour is an implementation default shown here so the owner can confirm or change it.
+
+| ID | Item | Current behaviour |
+|---|---|---|
+| D-1 | **Password-reset link lifetime** | **DECIDED by the owner: 3,600 seconds (1 hour)**, replacing Django's 3-day default. Implemented in `PASSWORD_RESET_TIMEOUT` and covered by regression tests (expiry at the boundary, expired and used links cannot reset, no enumeration, throttle unchanged, no sensitive data in records). |
+| D-2 | **Reset-request throttle** | 3 requests per 15 minutes per email key and per client address; throttled requests get the same generic response and send no email. The numbers are an implementation default. |
+| D-3 | **Historical plaintext passwords** | Code before the remediation stored whatever was typed in the username box in `LoginEvent.username_tried` and in audit summaries. No such rows exist in the development database (checked: 0 login events, 0 audit events). Any other environment that ran the earlier code may hold mistyped passwords in the append-only audit log; this cannot be removed by the application. Owner-led response if such an environment exists: treat those passwords as compromised and change them. |
+| D-4 | **Database hardening (L6)** | **DECIDED by the owner:** two-role model on Mac and Windows; `coven_owner` owns objects and runs privileged migrations; `coven_app` is the runtime role; `postgres` remains break-glass; members, editions and copies are no-delete; no BEFORE TRUNCATE trigger (TRUNCATE is withheld through privileges); implemented before Phase 3. Implemented and verified on macOS/PostgreSQL 16.15. Windows 11 and clean-machine recovery remain **unverified** (Phase 7b/7c). |
+| D-5 | **Owner credentials on the Dell** | **DECIDED by the owner:** a temporary `.env.owner` is allowed during upgrades only. Create it only when an upgrade is required; restrict permissions to the Windows account running the upgrade; never place owner credentials in Task Scheduler's runtime environment; delete it after successful migration and verification; never include credentials in logs or backups. |
+| D-6 | **Dev `coven_owner` CREATEDB** | **DECIDED by the owner:** `coven_owner` has CREATEDB on development machines only (test suite). `coven_app` never receives it. Production-like environments, including the Dell, do not grant CREATEDB to either role. |

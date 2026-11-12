@@ -69,18 +69,35 @@ TEMPLATES = [
     },
 ]
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("DB_NAME", required=True),
-        "USER": env("DB_USER", required=True),
-        "PASSWORD": env("DB_PASSWORD", required=True),
-        "HOST": env("DB_HOST", "127.0.0.1"),
-        "PORT": env("DB_PORT", "5432"),
+# --- Database: two roles (see docs/DATABASE_SECURITY.md) -------------------------------------
+# coven_app   = RUNTIME role: data access only (DB_USER / DB_PASSWORD).
+# coven_owner = OWNER role: owns the objects, runs migrations (DB_OWNER_USER / DB_OWNER_PASSWORD).
+# Owner credentials are read ONLY by config.settings.migrate and config.settings.test, never by
+# the runtime settings, so they never need to exist in the runtime environment.
+DB_SECURITY_MODE = env("DB_SECURITY_MODE", "strict")
+if DB_SECURITY_MODE not in {"strict", "single_role_dev"}:
+    raise ImproperlyConfigured("DB_SECURITY_MODE must be 'strict' or 'single_role_dev'.")
+DB_RUNTIME_ROLE = env("DB_USER", "")  # the runtime role NAME (not a secret)
+DB_ROLE = "runtime"  # overridden to "owner" by the migrate and test settings
+
+
+def build_database(user, password):
+    return {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("DB_NAME", required=True),
+            "USER": user,
+            "PASSWORD": password,
+            "HOST": env("DB_HOST", "127.0.0.1"),
+            "PORT": env("DB_PORT", "5432"),
+        }
     }
-}
+
 
 AUTH_USER_MODEL = "accounts.User"
+# Password-reset link lifetime: 1 hour (3600 s), as decided by the owner (Django's default would be
+# 3 days). Set explicitly so it is visible, tested and cannot change silently with an upgrade.
+PASSWORD_RESET_TIMEOUT = 3600
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},

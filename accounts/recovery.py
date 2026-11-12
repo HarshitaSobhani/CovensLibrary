@@ -21,6 +21,10 @@ def issue_code(user):
     """Create a single-use code (hashed at rest); the plaintext is returned once, never stored."""
     raw = "".join(secrets.choice(ALPHABET) for _ in range(10))
     now = timezone.now()
+    # Only the newest code is valid: expire any earlier unused code immediately.
+    RecoveryCode.objects.filter(user=user, used_at__isnull=True, expires_at__gt=now).update(
+        expires_at=now
+    )
     RecoveryCode.objects.create(
         user=user, code_hash=make_password(raw), created_at=now, expires_at=now + EXPIRY
     )

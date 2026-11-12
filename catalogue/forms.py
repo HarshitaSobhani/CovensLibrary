@@ -1,4 +1,5 @@
 from django import forms
+from django.db import transaction
 
 from core.errors import RuleViolation
 from core.forms import BootstrapFormMixin
@@ -95,6 +96,18 @@ class CategoryForm(BootstrapFormMixin, forms.ModelForm):
 
 
 class LabelLayoutForm(BootstrapFormMixin, forms.ModelForm):
+    """Creating or editing a layout may make it the default; any previous default is unset."""
+
+    def _get_validation_exclusions(self):
+        # The "single default" rule is applied in save(), not as a form-level validation error.
+        return super()._get_validation_exclusions() | {"is_default"}
+
+    def save(self, commit=True):
+        with transaction.atomic():
+            if self.cleaned_data.get("is_default"):
+                LabelLayout.objects.exclude(pk=self.instance.pk).update(is_default=False)
+            return super().save(commit=commit)
+
     class Meta:
         model = LabelLayout
         fields = [

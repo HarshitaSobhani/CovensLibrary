@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN.md — Coven's Library
 
-Status: Phases 1a, 1c, 1b and 2 (2a, 2b, 2c) are implemented and verified (evidence: `docs/IMPLEMENTATION_LOG.md`). **Phase 3 onward is NOT STARTED and awaits owner approval.** Completing documentation is not implementation progress. No commits/pushes unless the owner asks. Phase 0 documentation work is the only permitted activity until the owner approves Phase 1.
+Status: Phases 1a, 1c, 1b and 2 (2a, 2b, 2c) are implemented and verified (evidence: `docs/IMPLEMENTATION_LOG.md`). L6 two-role database hardening is implemented and verified on macOS (`docs/DATABASE_SECURITY.md`); Windows 11 is unverified. **Phase 3 onward is NOT STARTED and awaits owner approval.** Completing documentation is not implementation progress. No commits/pushes unless the owner asks. Phase 0 documentation work is the only permitted activity until the owner approves Phase 1.
 
 All business-policy decisions (A1, A2, B1–B44, N1–N12), all specification questions (Q1–Q8, including Q7b receipt year and the Q8 email schedule) and the dashboard defaults are confirmed. **No phase has an open decision gate.** `keyring` is approved but not installed.
 

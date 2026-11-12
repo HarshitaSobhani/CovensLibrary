@@ -1,9 +1,10 @@
 import phonenumbers
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from audit.services import record
 from core.errors import RuleViolation
+from core.http import clean_query
 from core.sequences import next_value
 
 from .models import Member
@@ -49,14 +50,21 @@ def create_member(*, actor, full_name, national_number, region, email="", joined
     mobile = normalise_mobile(national_number, region)
     if _mobile_in_use(mobile):
         raise RuleViolation("mobile_duplicate", "A member with this mobile number already exists.")
-    member = Member.objects.create(
-        membership_no=format_member_no(next_value("member")),
-        full_name=full_name.strip(),
-        mobile_e164=mobile,
-        email=email.strip(),
-        joined_on=joined_on or timezone.localdate(),
-        notes=notes,
-    )
+    try:
+        with transaction.atomic():  # savepoint: a lost race must not poison the outer transaction
+            member = Member.objects.create(
+                membership_no=format_member_no(next_value("member")),
+                full_name=full_name.strip(),
+                mobile_e164=mobile,
+                email=email.strip(),
+                joined_on=joined_on or timezone.localdate(),
+                notes=notes,
+            )
+    except IntegrityError:
+        # Another request registered the same mobile between our check and the insert.
+        raise RuleViolation(
+            "mobile_duplicate", "A member with this mobile number already exists."
+        ) from None
     record(
         "member.create",
         actor=actor,
@@ -88,7 +96,13 @@ def update_member(member, *, actor, full_name, national_number, region, email=""
     member.mobile_e164 = mobile
     member.email = email.strip()
     member.notes = notes
-    member.save()
+    try:
+        with transaction.atomic():
+            member.save()
+    except IntegrityError:
+        raise RuleViolation(
+            "mobile_duplicate", "A member with this mobile number already exists."
+        ) from None
     record(
         "member.update",
         actor=actor,
@@ -178,7 +192,7 @@ def anonymise_member(member, *, actor, reason, confirm):
 
 def search_members(query="", status=""):
     qs = Member.objects.all()
-    query = (query or "").strip()
+    query = clean_query(query)
     if query:
         from django.db.models import Q
 

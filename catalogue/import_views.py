@@ -1,9 +1,9 @@
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_POST
 
 from core.errors import RuleViolation
 from core.forms import BootstrapFormMixin
@@ -96,16 +96,11 @@ def import_preview(request, pk):
             "batch": batch,
             "form": form,
             "summary": svc.summarise(batch),
-            "rows": batch.rows.all()[:200],
+            "page": Paginator(batch.rows.all(), 100).get_page(request.GET.get("page")),
+            "qs": "",
             **NAV,
         },
     )
-
-
-@login_required
-@require_POST
-def import_confirm(request, pk):
-    return redirect("catalogue:import_preview", pk=pk)
 
 
 @login_required
