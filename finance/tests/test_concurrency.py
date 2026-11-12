@@ -95,10 +95,11 @@ class ConcurrentLedgerTests(TransactionTestCase):
                         "(internal_txn_id, member_id, kind, cash_flow, amount_paise, "
                         "effective_date, processed_at, receipt_sequence, receipt_issued_on, "
                         "receipt_year, receipt_no, receipt_document_id, reason, backdated, "
-                        "backdate_reason, backdate_financial_confirmed, recorded_by_id) "
+                        "backdate_reason, backdate_financial_confirmed, recorded_by_id, "
+                        "recorded_by_system) "
                         "SELECT gen_random_uuid(), %s, 'subscription_payment', 'in', 100, "
                         "'2026-11-11', now(), 'subscription', '2026-11-11', 2026, "
-                        "'SUB-2026-000777', max(id), '', false, '', false, %s "
+                        "'SUB-2026-000777', max(id), '', false, '', false, %s, '' "
                         "FROM finance_receiptdocument",
                         [self.members[0].pk, self.owner.pk],
                     )

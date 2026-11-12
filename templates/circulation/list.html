@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% block heading %}Borrowing &amp; Returns{% endblock %}
+{% block content %}
+<div class="card-surface">
+  <div class="d-flex gap-2 flex-wrap mb-3">
+    <a class="btn-primary-token" style="text-decoration:none" href="{% url 'circulation:issue' %}">Issue a book</a>
+    <a href="?show=active">Active</a> <a href="?show=overdue">Overdue</a> <a href="?show=all">All</a> <a href="{% url 'circulation:decisions' %}">Forfeiture decisions</a> <a href="{% url 'circulation:grace' %}">Grace period</a>
+  </div>
+  <p class="small text-muted-token">Showing: {{ show }}. Grace period: {{ grace_days }} days after the due date.</p>
+  <table class="table table-sm"><thead><tr><th>Member</th><th>Copy</th><th>Issued</th><th>Due</th><th>State</th><th>Grace ends</th><th>Token forfeited on</th></tr></thead><tbody>
+  {% for r in rows %}<tr>
+    <td>{{ r.loan.member.membership_no }} {{ r.loan.member.full_name }}</td>
+    <td><a href="{% url 'circulation:detail' r.loan.pk %}">{{ r.loan.copy.copy_code }}</a> {{ r.loan.copy.edition.title }}</td>
+    <td>{{ r.loan.issued_on|date:"d M Y" }}</td><td>{{ r.loan.due_on|date:"d M Y" }}</td>
+    <td>{% if r.loan.status != 'active' %}{{ r.loan.get_status_display }}{% elif r.overdue_days %}Overdue {{ r.overdue_days }} day{{ r.overdue_days|pluralize }}{% else %}On loan{% endif %}</td>
+    <td>{% if r.loan.status == 'active' %}{{ r.grace_end|date:"d M Y" }}{% endif %}</td>
+    <td>{% if r.loan.status == 'active' %}{{ r.forfeiture_day|date:"d M Y" }}{% endif %}</td>
+  </tr>{% empty %}<tr><td colspan="7">No loans.</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endblock %}

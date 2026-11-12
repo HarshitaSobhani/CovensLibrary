@@ -167,6 +167,9 @@ class CopyEvent(models.Model):
     event_type = models.CharField(max_length=20, choices=Type.choices)
     from_value = models.CharField(max_length=40, blank=True)
     to_value = models.CharField(max_length=40, blank=True)
+    loan = models.ForeignKey(
+        "circulation.Loan", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
     note = models.TextField(blank=True)
     event_date = models.DateField(default=timezone.localdate)
     processed_at = models.DateTimeField(default=timezone.now)

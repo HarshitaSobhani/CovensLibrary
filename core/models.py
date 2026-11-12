@@ -1,4 +1,7 @@
+import uuid
+
 from django.db import models
+from django.utils import timezone
 
 from .money import MAX_PAISE
 
@@ -62,3 +65,63 @@ class IdSequence(models.Model):
 
     def __str__(self):
         return f"{self.name}/{self.year}={self.last_value}"
+
+
+class SettingChangeEvent(models.Model):
+    """A recorded change of a business setting (append-only). For the grace period it lists the
+    loans that became newly eligible for token forfeiture (they need the owner's decision)."""
+
+    setting_name = models.CharField(max_length=60)
+    old_value = models.CharField(max_length=60)
+    new_value = models.CharField(max_length=60)
+    actor = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="+")
+    changed_at = models.DateTimeField(default=timezone.now)
+    affected_loans = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.setting_name}: {self.old_value} -> {self.new_value}"
+
+
+class DomainEvent(models.Model):
+    """Transactional outbox: one durable row per notifiable business fact (APPEND_ONLY).
+
+    The row is inserted in the SAME database transaction as the business operation (see
+    ``core.outbox.emit``), so a rolled-back operation leaves no event and a committed one can never
+    lose it. ``dedupe_key`` is unique: the same fact can never produce two events. Phase 5b reads
+    events that have no notification record yet (matched on ``dedupe_key``); this table is never
+    updated - delivery, retry and skip state live in the notification table. The payload holds ids
+    and codes only (no names, contact details or credentials); the delivery step reads live member
+    data, so anonymisation is honoured.
+    """
+
+    event_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    dedupe_key = models.CharField(max_length=200, unique=True)
+    event_type = models.CharField(max_length=40)
+    member_id = models.PositiveBigIntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="members.Member id (no foreign key: core is imported by every app)",
+    )
+    payload = models.JSONField(default=dict, blank=True)
+    event_date = models.DateField(help_text="Business date of the fact (Asia/Kolkata).")
+    occurred_at = models.DateTimeField(help_text="When the fact was processed.")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(dedupe_key=""), name="domain_event_dedupe_key_not_empty"
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(event_type=""), name="domain_event_type_not_empty"
+            ),
+        ]
+        indexes = [models.Index(fields=["event_type", "id"], name="domain_event_type_idx")]
+
+    def __str__(self):
+        return f"{self.event_type} {self.dedupe_key}"

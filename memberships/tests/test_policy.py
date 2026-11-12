@@ -204,3 +204,42 @@ class BorrowingTests(SimpleTestCase):
             "due_after_last_valid_day",
         )  # never silently extended
         p.check_loan_renewal(self.period, D(2027, 4, 20), D(2027, 4, 25), D(2027, 5, 10))
+
+
+class LoanDateHelperTests(SimpleTestCase):
+    def test_default_due_renewal_grace_and_forfeiture_day(self):
+        self.assertEqual(p.default_due_date(D(2026, 12, 1), 30), D(2026, 12, 31))
+        self.assertEqual(p.renewed_due_date(D(2026, 12, 31), 30), D(2027, 1, 30))
+        # due 10 May -> grace 11-17 May -> day 8 = 18 May (decision B9)
+        self.assertEqual(p.grace_end(D(2027, 5, 10), 7), D(2027, 5, 17))
+        self.assertEqual(p.forfeiture_day(D(2027, 5, 10), 7), D(2027, 5, 18))
+        self.assertEqual(p.forfeiture_day(D(2027, 5, 10), 3), D(2027, 5, 14))
+
+    def test_overdue_boundaries(self):
+        due = D(2027, 5, 10)
+        self.assertFalse(p.is_overdue(due, due))  # due today is not overdue
+        self.assertTrue(p.is_overdue(due, D(2027, 5, 11)))
+        self.assertEqual(p.days_overdue(due, D(2027, 5, 9)), 0)
+        self.assertEqual(p.days_overdue(due, D(2027, 5, 18)), 8)
+
+
+class CoveragePeriodTests(SimpleTestCase):
+    cur = Period(D(2026, 11, 11), D(2027, 5, 11))
+
+    def test_a_single_period_is_its_own_coverage(self):
+        self.assertEqual(p.coverage_period([self.cur], D(2027, 1, 1)), self.cur)
+
+    def test_adjacent_renewals_extend_the_last_valid_day(self):
+        nxt = Period(D(2027, 5, 11), D(2027, 11, 11))
+        third = Period(D(2027, 11, 11), D(2028, 5, 11))
+        cover = p.coverage_period([self.cur, nxt, third], D(2027, 1, 1))
+        self.assertEqual((cover.starts_on, cover.expires_on), (D(2026, 11, 11), D(2028, 5, 11)))
+        self.assertEqual(p.max_due_date(cover), D(2028, 5, 10))
+
+    def test_a_gap_a_cancelled_period_or_no_active_period_breaks_the_coverage(self):
+        gap = Period(D(2027, 6, 1), D(2027, 12, 1))
+        self.assertEqual(p.coverage_period([self.cur, gap], D(2027, 1, 1)), self.cur)
+        gone = Period(D(2027, 5, 11), D(2027, 11, 11), cancelled=True)
+        self.assertEqual(p.coverage_period([self.cur, gone], D(2027, 1, 1)), self.cur)
+        self.assertIsNone(p.coverage_period([self.cur], D(2027, 5, 11)))
+        self.assertIsNone(p.coverage_period([self.cur], D(2026, 11, 10)))

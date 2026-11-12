@@ -10,6 +10,8 @@ from django.utils import timezone
 
 from core.money import MAX_PAISE
 
+SYSTEM_OVERDUE_FORFEITURE = "overdue_forfeiture_job"  # the only system actor (D-15)
+
 
 class ReceiptDocument(models.Model):
     """A frozen receipt snapshot; a combined registration printout lists both receipts."""
@@ -88,9 +90,12 @@ class FinancialTransaction(models.Model):
     backdate_reason = models.TextField(blank=True)
     backdate_financial_confirmed = models.BooleanField(default=False)
     request_key = models.UUIDField(null=True, blank=True, unique=True)
+    # Attribution (decision D-15): the authenticated owner, OR - exclusively for the automatic
+    # day-8 forfeiture - a named system process. Never both, never neither.
     recorded_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
     )
+    recorded_by_system = models.CharField(max_length=40, blank=True)
 
     RECEIPT_KINDS = ("subscription_payment", "token_collection", "token_refund", "adjustment")
 
@@ -209,6 +214,19 @@ class FinancialTransaction(models.Model):
             models.CheckConstraint(
                 condition=models.Q(adjusts__isnull=True) | models.Q(kind="adjustment"),
                 name="txn_only_adjustments_link_an_original",
+            ),
+            # D-15: exactly one attribution; the system actor is not a general bypass.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(recorded_by__isnull=False, recorded_by_system="")
+                    | models.Q(recorded_by__isnull=True) & ~models.Q(recorded_by_system="")
+                ),
+                name="txn_exactly_one_attribution",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(recorded_by_system="")
+                | models.Q(recorded_by_system=SYSTEM_OVERDUE_FORFEITURE, kind="token_forfeiture"),
+                name="txn_system_actor_only_for_automatic_forfeiture",
             ),
             models.CheckConstraint(
                 condition=~models.Q(kind__in=["adjustment", "reversal"], reason=""),

@@ -9,13 +9,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from audit.services import record
+from core import outbox
 from core.errors import RuleViolation
 from core.money import clean_reason
 from members.models import Member
 
 from . import services as fs
 from . import tokens
-from .models import FinancialTransaction, TokenLedgerEntry
+from .models import SYSTEM_OVERDUE_FORFEITURE, FinancialTransaction, TokenLedgerEntry
 from .services import Item
 
 K = fs.K
@@ -101,23 +102,49 @@ def refund_token(
             **fs.audit_dates(txn),
         },
     )
+    outbox.emit(
+        outbox.TOKEN_REFUNDED,
+        dedupe_key=f"token:{txn.internal_txn_id}:refunded",
+        member_id=member.pk,
+        event_date=txn.effective_date,
+        payload={"cycle_no": cycle.cycle_no, "receipt_no": txn.receipt_no, "amount_paise": amount},
+    )
     return posted
 
 
 # ---- token forfeiture --------------------------------------------------------------------------
 @transaction.atomic
 def forfeit_token(
-    *, actor, member, trigger, effective_date=None, owner_confirmed=False, reason="", today=None
+    *,
+    actor=None,
+    member,
+    trigger,
+    effective_date=None,
+    owner_confirmed=False,
+    reason="",
+    today=None,
 ):
     """Forfeit the full held token. Its own immutable record; no customer receipt.
 
     ``overdue_auto`` (day 8) needs no confirmation and may carry a past ``effective_date`` (the
     actual processing time is stored separately). Every other trigger needs the owner's
     confirmation and a reason. Phase 4 calls this from the circulation workflows.
+
+    Attribution (D-15): the automatic ``overdue_auto`` forfeiture is attributed to the system
+    process (``actor`` must be None); every other forfeiture keeps the authenticated owner.
     """
     today = today or timezone.localdate()
     if trigger not in T_.values:
         raise RuleViolation("trigger_invalid", "Unknown forfeiture reason.")
+    system = ""
+    if trigger == T_.OVERDUE_AUTO:
+        if actor is not None:
+            raise RuleViolation(
+                "auto_forfeiture_is_system", "The automatic forfeiture is a system action."
+            )
+        system = SYSTEM_OVERDUE_FORFEITURE
+    elif actor is None:
+        raise RuleViolation("actor_required", "A confirmed forfeiture needs the owner.")
     if trigger != T_.OVERDUE_AUTO:
         if not owner_confirmed:
             raise RuleViolation("confirmation_required", "The owner must confirm this forfeiture.")
@@ -147,7 +174,7 @@ def forfeit_token(
         reason=reason,
         rule_dated=True,
     )
-    posted = fs.post_items(member=member, items=[item], actor=actor, today=today)
+    posted = fs.post_items(member=member, items=[item], actor=actor, today=today, system=system)
     txn = posted.transactions[0]
     tokens.record_entry(
         cycle,
@@ -169,7 +196,22 @@ def forfeit_token(
             "cycle": cycle.cycle_no,
             "owner_confirmed": owner_confirmed,
             "reason": reason,
+            **({"system": system} if system else {}),
             **fs.audit_dates(txn),
+        },
+    )
+    outbox.emit(
+        outbox.TOKEN_FORFEITED,
+        dedupe_key=f"token-forfeiture:{txn.internal_txn_id}",
+        member_id=member.pk,
+        event_date=txn.effective_date,  # the business date (day 8 for a late automatic one)
+        occurred_at=txn.processed_at,
+        payload={
+            "cycle_no": cycle.cycle_no,
+            "trigger": trigger,
+            "amount_paise": amount,
+            "effective_date": txn.effective_date.isoformat(),
+            "system": bool(system),
         },
     )
     return posted

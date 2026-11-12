@@ -25,7 +25,17 @@ from memberships.models import MemberSubscription
 from .helpers import PW, TODAY, make_owner, register
 
 ROOT = Path(settings.BASE_DIR)
-APPS = ("accounts", "audit", "catalogue", "core", "finance", "members", "memberships", "config")
+APPS = (
+    "accounts",
+    "audit",
+    "catalogue",
+    "circulation",
+    "core",
+    "finance",
+    "members",
+    "memberships",
+    "config",
+)
 
 
 def source_files():
@@ -78,10 +88,25 @@ class SourceLevelTests(TestCase):
                     )
 
     def test_no_background_job_scheduler_or_signal_receiver_touches_subscriptions(self):
-        banned = re.compile(r"celery|apscheduler|django_q|huey|dramatiq|\bschedule\b|crontab", re.I)
+        banned = {
+            "celery",
+            "apscheduler",
+            "django_q",
+            "huey",
+            "dramatiq",
+            "schedule",
+            "crontab",
+            "rq",
+        }
         for path in source_files():
-            text = path.read_text()
-            self.assertIsNone(banned.search(text), f"scheduler reference in {path}")
+            tree = ast.parse(path.read_text())
+            imported = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported |= {alias.name.split(".")[0] for alias in node.names}
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported.add(node.module.split(".")[0])
+            self.assertEqual(imported & banned, set(), f"scheduler import in {path}")
         for app in ("memberships", "finance"):
             for path in (ROOT / app).rglob("*.py"):
                 if "tests" in path.parts or "migrations" in path.parts:

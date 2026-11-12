@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% block heading %}Loan {{ loan.pk }}{% endblock %}
+{% block content %}
+<div class="card-surface">
+  <dl>
+    <dt>Member</dt><dd><a href="{% url 'members:detail' loan.member_id %}">{{ loan.member.membership_no }} {{ loan.member.full_name }}</a></dd>
+    <dt>Copy</dt><dd>{{ loan.copy.copy_code }} - {{ loan.copy.edition.title }}</dd>
+    <dt>Issued</dt><dd>{{ loan.issued_on|date:"d M Y" }}{% if loan.backdated %} (backdated: {{ loan.backdate_reason }}){% endif %}</dd>
+    <dt>Due</dt><dd>{{ loan.due_on|date:"d M Y" }}</dd>
+    <dt>Status</dt><dd>{{ loan.get_status_display }}{% if loan.returned_on %} on {{ loan.returned_on|date:"d M Y" }} ({{ loan.return_condition }}){% endif %}{% if loan.return_backdated %} (backdated: {{ loan.return_backdate_reason }}){% endif %}</dd>
+    {% if loan.status == 'active' %}<dt>Grace</dt><dd>ends {{ row.grace_end|date:"d M Y" }}; the token is forfeited automatically on {{ row.forfeiture_day|date:"d M Y" }} if the book is still out{% if row.overdue_days %} (overdue {{ row.overdue_days }} day{{ row.overdue_days|pluralize }}){% endif %}.</dd>{% endif %}
+    {% if loan.forfeiture_entry %}<dt>Token</dt><dd>Forfeited ({{ loan.forfeiture_entry.get_forfeiture_trigger_display }}), effective {{ loan.forfeiture_entry.effective_date|date:"d M Y" }}</dd>{% endif %}
+  </dl>
+  {% if renewals %}<h2 style="font-size:1rem">Renewals</h2><ul>{% for r in renewals %}<li>{{ r.renewed_on|date:"d M Y" }}: {{ r.old_due_on|date:"d M Y" }} &rarr; {{ r.new_due_on|date:"d M Y" }} {{ r.notes }}</li>{% endfor %}</ul>{% endif %}
+  {% if pending %}<p class="small">Grace-change decisions: {% for p in pending %}{{ p.get_status_display }}{% if not forloop.last %}, {% endif %}{% endfor %}. <a href="{% url 'circulation:decisions' %}">Open</a></p>{% endif %}
+  {% if active %}<div class="d-flex gap-2 flex-wrap">
+    <a class="btn-primary-token" style="text-decoration:none" href="{% url 'circulation:return' loan.pk %}">Record return</a>
+    <a class="btn-primary-token" style="text-decoration:none" href="{% url 'circulation:renew' loan.pk %}">Renew +30 days</a>
+    <a class="btn-primary-token" style="text-decoration:none" href="{% url 'circulation:lost' loan.pk %}">Mark lost</a></div>{% endif %}
+</div>
+{% endblock %}

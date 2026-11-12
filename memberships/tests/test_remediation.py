@@ -139,7 +139,6 @@ class BackdatingAuditTests(TestCase):
         member = register(self.owner).member
         day8 = date(2026, 12, 18)
         fc.forfeit_token(
-            actor=self.owner,
             member=member,
             trigger="overdue_auto",
             effective_date=day8,

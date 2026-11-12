@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block heading %}Grace period{% endblock %}
+{% block content %}
+<div class="card-surface" style="max-width:44rem">
+  <p>Grace period: <strong>{{ grace_days }} days</strong> after the due date. On the day after it ("day 8") the full token is forfeited automatically; a return on that day still forfeits.</p>
+  <p class="small text-muted-token">A change applies to books already out. Any book that becomes eligible because of a change waits for your decision (confirm, or decline with a reason): nothing is posted without you.</p>
+  <form method="post" novalidate>{% csrf_token %}{% include "partials/form_fields.html" %}
+  <button class="btn-primary-token" type="submit">Change grace period</button></form>
+  <h2 class="mt-3" style="font-size:1rem">History</h2>
+  <ul>{% for h in history %}<li>{{ h.changed_at|date:"d M Y H:i" }}: {{ h.old_value }} &rarr; {{ h.new_value }} ({{ h.affected_loans|length }} loan{{ h.affected_loans|length|pluralize }} affected)</li>{% empty %}<li>No changes yet.</li>{% endfor %}</ul>
+  <p><a href="{% url 'circulation:decisions' %}">Pending decisions</a> &middot; <a href="{% url 'circulation:list' %}">Loans</a></p>
+</div>
+{% endblock %}

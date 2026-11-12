@@ -80,6 +80,23 @@ def periods_overlap(a, b):
     return a.starts_on < b.expires_on and b.starts_on < a.expires_on
 
 
+def coverage_period(periods, day):
+    """The member's CONTIGUOUS membership around ``day``: the active period plus every
+    non-cancelled period that starts exactly where the previous one expires. Borrowing rules use
+    the last valid day of this coverage, so a member who renewed the membership (early) is valid
+    through the renewed period (decision A2: 'the owner renews the membership first')."""
+    live = [p for p in periods if not p.cancelled]
+    current = current_period(live, day)
+    if current is None:
+        return None
+    end = current.expires_on
+    while True:
+        following = next((p for p in live if p.starts_on == end), None)
+        if following is None:
+            return Period(current.starts_on, end)
+        end = following.expires_on
+
+
 # ---- starting the next subscription ----------------------------------------------------------
 def next_start(periods, today, activation_date=None):
     """Start date of a new (renewal or first) subscription, or RuleViolation.
@@ -164,3 +181,37 @@ def check_loan_renewal(period, today, current_due, new_due):
     if period is None or not is_valid_on(period, today):
         raise RuleViolation("no_valid_subscription", "The member has no valid subscription.")
     check_due_date(period, new_due)
+
+
+# ---- loan dates (the only place where loan date arithmetic lives) ------------------------------
+def default_due_date(issue_date, loan_days):
+    """Default due date: ``loan_days`` (30) after the issue date."""
+    return issue_date + timedelta(days=loan_days)
+
+
+def renewed_due_date(current_due, loan_days):
+    """A renewal adds ``loan_days`` (30) to the EXISTING due date."""
+    return current_due + timedelta(days=loan_days)
+
+
+def grace_end(due_date, grace_days):
+    """Last grace day: ``grace_days`` calendar days after the due date (due 10 May -> 17 May)."""
+    return due_date + timedelta(days=grace_days)
+
+
+def forfeiture_day(due_date, grace_days):
+    """'Day 8': the first day after the grace period (due 10 May, 7 days -> 18 May)."""
+    return grace_end(due_date, grace_days) + timedelta(days=1)
+
+
+def is_overdue(due_date, day):
+    return day > due_date
+
+
+def days_overdue(due_date, day):
+    return max(0, (day - due_date).days)
+
+
+def latest_due_date_for_forfeiture(day, grace_days):
+    """The newest due date whose forfeiture day has arrived by ``day`` (due + grace + 1 <= day)."""
+    return day - timedelta(days=grace_days + 1)

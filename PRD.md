@@ -140,6 +140,8 @@ Plans are configurable for future subscriptions; existing records keep their pla
 
 **Renewal rules.** The owner records approved renewals. Unlimited; each adds 30 days to the existing due date. **No renewal once the due date has passed** (grace does not allow renewals). A renewal is blocked if the new due date would be after the last valid day or the membership is not valid through it; the owner renews the membership first. Each renewal keeps old/new due dates, timestamp and notes.
 
+**Phase 4 clarifications (owner-confirmed, OPEN_QUESTIONS D-17 to D-24; domain events are stored durably in an outbox, D-23, delivery is Phase 5b; outbox events are business facts, never delivery state):** the loan rules use the last valid day of the member's contiguous membership; the owner may explicitly choose an earlier due date at issue; past loan dates need a reason and extra confirmation; automatic and owner-confirmed forfeitures never double-post.
+
 **Return rules.** The owner confirms the copy and its condition. Damaged, Poor and Lost outcomes follow §6.6; Good copies become Available. Full history is retained; loan history is never deleted. Unreturned books stay overdue, the copy stays unavailable, the member is "outstanding", and token refund or closure is blocked until resolved.
 
 **Backdating.** The owner may enter any past issue or return date. Every backdated operation requires a mandatory reason and an audit entry; if the date affects financial transactions, additional owner confirmation is required. The event date, the financial effective date and the processing timestamp are kept distinct.

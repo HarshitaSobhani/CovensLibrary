@@ -1,7 +1,7 @@
 <a href="{% url 'core:dashboard' %}" {% if nav_active == 'dashboard' %}class="active" aria-current="page"{% endif %}>Dashboard</a>
 <a href="{% url 'members:list' %}" {% if nav_active == 'members' %}class="active" aria-current="page"{% endif %}>Members</a>
 <a href="{% url 'catalogue:edition_list' %}" {% if nav_active == 'books' %}class="active" aria-current="page"{% endif %}>Books &amp; Inventory</a>
-<span class="nav-item" aria-disabled="true">Borrowing &amp; Returns</span>
+<a href="{% url 'circulation:list' %}" {% if nav_active == 'loans' %}class="active" aria-current="page"{% endif %}>Borrowing &amp; Returns</a>
 <a href="{% url 'memberships:register' %}" {% if nav_active == 'register' %}class="active"{% endif %}>Register a member</a>
 <span class="nav-item" aria-disabled="true">Payments &amp; Tokens</span>
 <span class="nav-item" aria-disabled="true">Reminders</span>

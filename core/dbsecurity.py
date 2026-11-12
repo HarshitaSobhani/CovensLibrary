@@ -50,6 +50,8 @@ TABLE_POLICIES = {
     # --- core
     "core_idsequence": MUTABLE,
     "core_librarysetting": NO_DELETE,  # the singleton settings row
+    "core_settingchangeevent": APPEND_ONLY,  # history of business-setting changes
+    "core_domainevent": APPEND_ONLY,  # transactional outbox (notifiable business events)
     # --- members (history: no hard deletion)
     "members_member": NO_DELETE,
     # --- catalogue
@@ -71,6 +73,10 @@ TABLE_POLICIES = {
     "finance_tokenaccount": APPEND_ONLY,
     "finance_tokencycle": APPEND_ONLY,
     "finance_tokenledgerentry": APPEND_ONLY,
+    # --- circulation (loans are history: guarded, never deleted)
+    "circulation_loan": NO_DELETE,  # closes once; a trigger allows only the documented changes
+    "circulation_loanrenewal": APPEND_ONLY,
+    "circulation_pendingforfeiture": NO_DELETE,  # pending -> confirmed/declined once (guarded)
     # --- Django framework tables (written only by migrations, i.e. by the owner)
     "django_migrations": READ_ONLY,
     "django_content_type": READ_ONLY,
@@ -86,6 +92,11 @@ REQUIRED_TRIGGERS = {
     "catalogue_copyevent": ("catalogue_copyevent_append_only",),
     "members_member": ("members_member_no_immutable",),
     "memberships_membersubscription": ("memberships_subscription_guard",),
+    "circulation_loan": ("circulation_loan_guard",),
+    "circulation_loanrenewal": ("circulation_loanrenewal_append_only",),
+    "circulation_pendingforfeiture": ("circulation_pending_forfeiture_guard",),
+    "core_settingchangeevent": ("core_settingchangeevent_append_only",),
+    "core_domainevent": ("core_domainevent_append_only",),
     "finance_financialtransaction": (
         "finance_financialtransaction_append_only",
         "finance_txn_payment_sum",
@@ -95,7 +106,11 @@ REQUIRED_TRIGGERS = {
     "finance_receiptdocument": ("finance_receiptdocument_append_only",),
     "finance_tokenaccount": ("finance_tokenaccount_append_only",),
     "finance_tokencycle": ("finance_tokencycle_append_only",),
-    "finance_tokenledgerentry": ("finance_tokenledgerentry_append_only", "finance_token_balance"),
+    "finance_tokenledgerentry": (
+        "finance_tokenledgerentry_append_only",
+        "finance_token_balance",
+        "finance_ledger_attribution",
+    ),
 }
 
 ROLE_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")

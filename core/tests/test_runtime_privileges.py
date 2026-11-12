@@ -167,6 +167,9 @@ class RuntimePrivilegeTests(TransactionTestCase):
             "finance_tokenaccount",
             "finance_tokencycle",
             "finance_tokenledgerentry",
+            "circulation_loanrenewal",
+            "core_settingchangeevent",
+            "core_domainevent",
         ):
             self.assertDenied(f"UPDATE {table} SET id = id")
             self.assertDenied(f"DELETE FROM {table}")
@@ -187,6 +190,10 @@ class RuntimePrivilegeTests(TransactionTestCase):
             self.assertDenied(f"TRUNCATE {table}")
         self.assertDenied("DELETE FROM memberships_subscriptionplan")
         self.assertDenied("DELETE FROM memberships_membersubscription")
+        self.assertDenied("DELETE FROM circulation_loan")
+        self.assertDenied("DELETE FROM circulation_pendingforfeiture")
+        self.assertDenied("TRUNCATE circulation_pendingforfeiture")
+        self.assertDenied("TRUNCATE circulation_loan")
         self.assertDenied("TRUNCATE memberships_membersubscription")
         self.assertDenied("TRUNCATE memberships_subscriptionplan")
         self.assertDenied("DELETE FROM accounts_user")
@@ -395,7 +402,45 @@ for name, action in (
         out[name] = "ALLOWED"
     except DatabaseError:
         out[name] = "denied"
+from datetime import timedelta
+from django.utils import timezone
+from circulation import forfeiture, services as loans
+from circulation.models import Loan
+from finance.models import FinancialTransaction as Txn
+today = timezone.localdate()
+book = cs.add_copies(e, 1, actor=owner, source="purchased")[0]
+loan = loans.issue_loan(actor=owner, member=reg.member, copy=book)
+out["loan_status"] = loan.status
+renewal = loans.renew_loan(actor=owner, loan=loan)
+out["renewal_due"] = (renewal.new_due_on - loan.due_on).days
+job = forfeiture.process_overdue_forfeitures(today=renewal.new_due_on + timedelta(days=8))
+out["job_forfeited"] = job["forfeited"]
+txn = Txn.objects.get(kind="token_forfeiture", member=reg.member)
+out["system_actor"] = [txn.recorded_by_id is None, txn.recorded_by_system]
+for name, action in (
+    ("loan_delete", lambda: Loan.objects.all()._raw_delete(using="default")),
+    ("loan_reopen", lambda: Loan.objects.filter(pk=loan.pk).update(issued_on=today - timedelta(days=400))),
+    ("loan_due_back", lambda: Loan.objects.filter(pk=loan.pk).update(due_on=today - timedelta(days=900))),
+):
+    try:
+        with transaction.atomic():
+            action()
+        out[name] = "ALLOWED"
+    except DatabaseError:
+        out[name] = "denied"
 out["audit_rows"] = AuditEvent.objects.count()
+from core.models import DomainEvent
+out["outbox_types"] = sorted(set(DomainEvent.objects.values_list("event_type", flat=True)))
+for name, action in (
+    ("outbox_update", lambda: DomainEvent.objects.update(event_type="x")),
+    ("outbox_delete", lambda: DomainEvent.objects.all()._raw_delete(using="default")),
+):
+    try:
+        with transaction.atomic():
+            action()
+        out[name] = "ALLOWED"
+    except DatabaseError:
+        out[name] = "denied"
 print("RESULT" + json.dumps(out))
 """
         env = {k: v for k, v in os.environ.items() if not k.startswith("DB_OWNER")}
@@ -429,3 +474,16 @@ print("RESULT" + json.dumps(out))
         self.assertEqual(result["subscriptions"], 2)
         for name in ("fin_update", "fin_delete", "sub_edit", "sub_delete"):
             self.assertEqual(result[name], "denied", name)
+        self.assertEqual((result["loan_status"], result["renewal_due"]), ("active", 30))
+        self.assertEqual(result["job_forfeited"], 1)
+        self.assertEqual(result["system_actor"], [True, "overdue_forfeiture_job"])
+        for name in (
+            "loan_delete",
+            "loan_reopen",
+            "loan_due_back",
+            "outbox_update",
+            "outbox_delete",
+        ):
+            self.assertEqual(result[name], "denied", name)
+        for kind in ("member.registered", "loan.issued", "loan.renewed", "token.forfeited"):
+            self.assertIn(kind, result["outbox_types"])

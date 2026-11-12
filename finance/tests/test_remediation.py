@@ -439,8 +439,8 @@ class CorrectionRuleTriggerTests(TestCase):
                 "cash_flow, amount_paise, effective_date, processed_at, receipt_sequence, "
                 "receipt_issued_on, receipt_year, receipt_no, receipt_document_id, reverses_id, "
                 "adjusts_id, reason, backdated, backdate_reason, backdate_financial_confirmed, "
-                "recorded_by_id) VALUES (gen_random_uuid(), %s, %s, %s, 100, '2026-11-11', now(), "
-                "%s, %s, %s, %s, %s, %s, %s, 'r', false, '', false, %s)",
+                "recorded_by_id, recorded_by_system) VALUES (gen_random_uuid(), %s, %s, %s, 100, "
+                "'2026-11-11', now(), %s, %s, %s, %s, %s, %s, %s, 'r', false, '', false, %s, '')",
                 [
                     self.member.pk,
                     kind,

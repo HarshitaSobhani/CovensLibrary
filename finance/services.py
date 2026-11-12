@@ -13,6 +13,7 @@ from datetime import date
 from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 
+from core import outbox
 from core.errors import RuleViolation
 from core.models import LibrarySetting
 from core.money import MAX_REASON_LENGTH, check_amount, clean_reason
@@ -186,6 +187,7 @@ def post_items(
     backdate_reason="",
     backdate_confirmed=False,
     notes="",
+    system="",
 ):
     """Post one or more ledger records atomically, with one receipt document for the receipted ones.
 
@@ -197,6 +199,14 @@ def post_items(
     notes = clean_reason(notes, "The note")
     if not items:
         raise ValueError("no items")
+    if system:  # D-15: only the automatic forfeiture may be attributed to a system process
+        if actor is not None or any(i.kind != K.TOKEN_FORFEITURE for i in items):
+            raise RuleViolation(
+                "system_actor_misuse",
+                "A system attribution is valid only for an automatic token forfeiture.",
+            )
+    elif actor is None:
+        raise RuleViolation("actor_required", "A financial record needs the authenticated owner.")
     prepared = []
     backdated_any, reason_text = False, ""
     for item in items:
@@ -302,7 +312,8 @@ def post_items(
                     backdate_reason=reason_text if backdated_any else "",
                     backdate_financial_confirmed=backdated_any,
                     request_key=item.request_key,
-                    recorded_by=actor,
+                    recorded_by=None if system else actor,
+                    recorded_by_system=system,
                     **receipt,
                 )
         except IntegrityError:
@@ -325,6 +336,26 @@ def post_items(
             for e in item.entries
         )
         posted.append(txn)
+    if document is not None:
+        outbox.emit(
+            outbox.PAYMENT_RECEIPTED,
+            dedupe_key=f"receipt:{document.pk}",
+            member_id=member.pk,
+            event_date=today,
+            payload={
+                "document_id": document.pk,
+                "document_kind": document.kind,
+                "receipts": [
+                    {
+                        "receipt_no": t.receipt_no,
+                        "kind": t.kind,
+                        "amount_paise": t.amount_paise,
+                    }
+                    for t in posted
+                    if t.receipt_no
+                ],
+            },
+        )
     return Posted(document=document, transactions=posted)
 
 

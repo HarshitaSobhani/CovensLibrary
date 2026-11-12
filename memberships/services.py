@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from audit.services import record
+from core import outbox
 from core.errors import RuleViolation
 from core.money import clean_reason
 from finance import services as fs
@@ -59,6 +60,11 @@ def current_subscription(member, today):
         if policy.state(sub.period, today) == policy.ACTIVE:
             return sub
     return None
+
+
+def coverage_period(member, day):
+    """Contiguous membership coverage (current + adjacent renewals) used by the loan rules."""
+    return policy.coverage_period(periods(member), day)
 
 
 def scheduled_subscription(member, today):
@@ -151,6 +157,36 @@ def _audit_subscription(action, actor, sub, txn, today, reason="", confirmed=Fal
     )
 
 
+def _emit_subscription_event(event_type, member, sub, txn, today):
+    outbox.emit(
+        event_type,
+        dedupe_key=f"subscription:{sub.pk}:{event_type.split('.')[1]}",
+        member_id=member.pk,
+        event_date=today,
+        payload={
+            "subscription_id": sub.pk,
+            "plan": sub.plan_name_snapshot,
+            "starts_on": sub.starts_on.isoformat(),
+            "expires_on": sub.expires_on.isoformat(),
+            "receipt_no": txn.receipt_no,
+        },
+    )
+
+
+def _emit_token_collected(member, cycle, txn):
+    outbox.emit(
+        outbox.TOKEN_COLLECTED,
+        dedupe_key=f"token:{txn.internal_txn_id}:collected",
+        member_id=member.pk,
+        event_date=txn.effective_date,
+        payload={
+            "cycle_no": cycle.cycle_no,
+            "receipt_no": txn.receipt_no,
+            "amount_paise": txn.amount_paise,
+        },
+    )
+
+
 def _check_start_backdating(start, today, reason, confirmed):
     """A subscription starting in the past is a backdated operation (B19)."""
     if start < today:
@@ -231,6 +267,15 @@ def register_member(
             **fs.audit_dates(tok_txn),
         },
     )
+    outbox.emit(
+        outbox.MEMBER_REGISTERED,
+        dedupe_key=f"member:{member.pk}:registered",
+        member_id=member.pk,
+        event_date=today,
+        payload={"membership_no": member.membership_no},
+    )
+    _emit_subscription_event(outbox.SUBSCRIPTION_ACTIVATED, member, sub, sub_txn, today)
+    _emit_token_collected(member, cycle, tok_txn)
     return Result(member, sub, posted.document, posted.transactions)
 
 
@@ -287,6 +332,7 @@ def renew_subscription(
     _audit_subscription(
         "subscription.renewed", actor, sub, txn, today, backdate_reason, backdate_confirmed
     )
+    _emit_subscription_event(outbox.SUBSCRIPTION_RENEWED, member, sub, txn, today)
     return Result(member, sub, posted.document, posted.transactions)
 
 
@@ -336,6 +382,7 @@ def pay_fresh_token(
         entity_id=member.pk,
         summary={"cycle": cycle.cycle_no, "receipt": txn.receipt_no, **fs.audit_dates(txn)},
     )
+    _emit_token_collected(member, cycle, txn)
     return Result(member, None, posted.document, posted.transactions)
 
 

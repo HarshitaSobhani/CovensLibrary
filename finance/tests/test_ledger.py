@@ -279,6 +279,7 @@ class DatabaseProtectionTests(Base):
             backdate_reason="",
             backdate_financial_confirmed=False,
             recorded_by_id=self.owner.pk,
+            recorded_by_system="",
         )
         values.update(overrides)
         cols = ", ".join(values)

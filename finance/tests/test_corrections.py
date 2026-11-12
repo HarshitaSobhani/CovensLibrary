@@ -42,7 +42,7 @@ class Base(TestCase):
         kw.setdefault("owner_confirmed", True)
         kw.setdefault("reason", "book not returned")
         return fc.forfeit_token(
-            actor=self.owner,
+            actor=None if trigger == "overdue_auto" else self.owner,
             member=self.member,
             trigger=trigger,
             today=kw.pop("today", TODAY),
@@ -89,8 +89,9 @@ class RefundTests(Base):
         self.assertEqual(self.rule(self.refund), "token_forfeited")
 
     def test_refund_is_blocked_while_a_book_is_outstanding(self):
+        saved = list(fc.OUTSTANDING_LOAN_CHECKS)  # keep the checks other apps registered
         fc.OUTSTANDING_LOAN_CHECKS.append(lambda member: member.pk == self.member.pk)
-        self.addCleanup(fc.OUTSTANDING_LOAN_CHECKS.clear)
+        self.addCleanup(lambda: fc.OUTSTANDING_LOAN_CHECKS.__setitem__(slice(None), saved))
         self.assertEqual(self.rule(self.refund), "loans_outstanding")
         self.assertEqual(self.state(), tokens.HELD)
 

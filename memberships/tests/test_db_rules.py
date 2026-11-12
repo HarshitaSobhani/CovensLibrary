@@ -203,9 +203,11 @@ class TokenLedgerConstraintTests(TestCase):
             self.insert_entry(
                 "forfeiture", -50000, forfeiture_trigger="damaged", owner_confirmed=True
             )
-        self.insert_entry(
-            "forfeiture", -50000, forfeiture_trigger="overdue_auto", owner_confirmed=False
-        )
+        # an automatic forfeiture attributed to the OWNER is refused by the attribution trigger
+        with self.assertRaisesMessage(DatabaseError, "must carry the system attribution"):
+            self.insert_entry(
+                "forfeiture", -50000, forfeiture_trigger="overdue_auto", owner_confirmed=False
+            )
 
     def test_balance_can_never_leave_zero_to_amount(self):
         with self.assertRaisesMessage(DatabaseError, "balance"):

@@ -186,7 +186,7 @@ def format_copy_code(number):
     return f"COV-C-{number:06d}"
 
 
-def _log_event(copy, event_type, frm="", to="", note="", actor=None, event_date=None):
+def _log_event(copy, event_type, frm="", to="", note="", actor=None, event_date=None, loan=None):
     return CopyEvent.objects.create(
         copy=copy,
         event_type=event_type,
@@ -194,8 +194,14 @@ def _log_event(copy, event_type, frm="", to="", note="", actor=None, event_date=
         to_value=to,
         note=note,
         actor=actor,
+        loan=loan,
         event_date=event_date or timezone.localdate(),
     )
+
+
+def log_copy_event(*args, **kwargs):
+    """Public wrapper for other apps (circulation) that write copy history."""
+    return _log_event(*args, **kwargs)
 
 
 def _create_copy(edition, acquisition, code, *, actor, shelf_location="", notes="", legacy_ref=""):
