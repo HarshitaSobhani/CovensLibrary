@@ -337,9 +337,8 @@ class ViewTests(TestCase):
         for key in queries.REPORTS:
             response = self.client.get(self.url(key))
             self.assertEqual(response.status_code, 200, key)
-            self.assertContains(
-                response, queries.build(key, D(2026, 11, 1), D(2026, 11, 30), D(2026, 11, 30)).title
-            )
+            # the page title is no longer repeated in a top bar (the sidebar names the section)
+            self.assertContains(response, 'name="preset"', msg_prefix=key)
 
     def test_login_is_required_everywhere(self):
         self.client.logout()

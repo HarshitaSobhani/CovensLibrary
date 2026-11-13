@@ -16,6 +16,7 @@ a:hover { color: var(--link); text-decoration-thickness: 2px; }
 .sidebar span.nav-item { opacity: .6; cursor: not-allowed; }
 .main { flex: 1; min-width: 0; }
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .75rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--border); }
+.topbar > div { margin-left: auto; }
 .content { padding: 1.5rem; }
 .card-surface { background: var(--surface); border: 1px solid var(--border); border-radius: .5rem; padding: 1.25rem; color: var(--text); overflow-x: auto; }
 .btn-primary-token { background: var(--primary); color: var(--on-primary); border: 0; border-radius: .375rem; padding: .4rem .9rem; }
@@ -23,6 +24,21 @@ a:hover { color: var(--link); text-decoration-thickness: 2px; }
 .text-muted-token { color: var(--text-muted); }
 .text-danger { color: var(--danger) !important; }
 :focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+
+/* Sign-in page: one centred card, generous spacing, labels and fields in a single column */
+.login-wrap { min-height: calc(100vh - 8.5rem); display: flex; align-items: center; justify-content: center; }
+.login-card { width: 100%; max-width: 28rem; padding: 3rem 2.5rem; border-radius: 1rem;
+  box-shadow: 0 1.25rem 3rem color-mix(in srgb, var(--text) 14%, transparent); overflow: visible; }
+.login-title { font-family: var(--font-display); font-size: 2rem; text-align: center; margin: 0 0 2.5rem; }
+.login-form .login-field { margin-bottom: 1.75rem; }
+.login-form .login-field label { display: block; margin-bottom: .5rem; font-size: .9rem; font-weight: 500; }
+.login-form .login-field input { display: block; width: 100%; min-height: 3rem; padding: .65rem .85rem; border-radius: .5rem; }
+.login-form .btn-primary-token { display: block; width: 100%; min-height: 3rem; margin-top: 2.25rem; font-size: 1rem; border-radius: .5rem; }
+.login-links { text-align: center; margin: 1.75rem 0 0; font-size: .9rem; }
+@media (max-width: 768px) {
+  .login-wrap { min-height: auto; padding-top: 1rem; }
+  .login-card { padding: 2rem 1.25rem; }
+}
 
 /* Tables */
 .table { --bs-table-color: var(--text); --bs-table-bg: transparent; --bs-table-border-color: var(--border);

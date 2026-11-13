@@ -44,3 +44,44 @@ class LayoutAndAccessTests(TestCase):
         for item in ("Dashboard", "Members", "Books &amp; Inventory", "Settings"):
             self.assertIn(item, html)
         self.assertIn("theme-toggle", html)
+
+
+class TopBarAndLoginLayoutTests(TestCase):
+    """UI-only: no repeated page title in the top bar, the control is called Mode, and the sign-in
+    form is laid out with the spacing classes."""
+
+    def topbar(self, html):
+        return html.split('<header class="topbar">')[1].split("</header>")[0]
+
+    def test_authenticated_pages_have_no_page_title_in_the_top_bar(self):
+        user = get_user_model().objects.create_user("owner", password="pw-Strong-123!")
+        self.client.force_login(user)
+        for name in (
+            "core:dashboard",
+            "core:settings",
+            "core:calendar",
+            "members:list",
+            "reports:index",
+            "communications:list",
+        ):
+            html = self.client.get(reverse(name)).content.decode()
+            bar = self.topbar(html)
+            self.assertNotIn("<strong>", bar, name)  # no heading in the bar
+            self.assertIn("Sign out", bar, name)
+            self.assertIn('id="theme-toggle"', bar, name)
+            self.assertIn(">Mode</button>", bar, name)
+            self.assertNotIn(">Theme<", html, name)
+            if name in {"core:dashboard", "core:settings"}:
+                self.assertIn('aria-current="page"', html.split("</nav>")[0], name)
+
+    def test_the_login_page_has_no_sign_in_heading_and_a_roomier_form(self):
+        html = self.client.get(reverse("accounts:login")).content.decode()
+        self.assertNotIn("<strong>", self.topbar(html))  # no "Sign in" title in the bar
+        self.assertEqual(html.split("<body>")[1].count("Sign in"), 1)  # only the submit button
+        self.assertIn('class="login-form"', html)
+        self.assertEqual(html.count('class="login-field"'), 2)
+        self.assertIn(">Mode</button>", html)
+
+    def test_other_signed_out_pages_keep_their_own_heading(self):
+        html = self.client.get(reverse("accounts:password_reset")).content.decode()
+        self.assertIn("<strong>", self.topbar(html))
