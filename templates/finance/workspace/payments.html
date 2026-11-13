@@ -1,0 +1,82 @@
+{% extends "base.html" %}{% load money %}
+{% block title %}Payments &amp; Tokens - {{ library.library_name }}{% endblock %}
+{% block content %}
+{% include "finance/workspace/_tabs.html" %}
+
+<div class="card-surface mb-3">
+  <form method="get" class="d-flex gap-2 flex-wrap align-items-end" aria-label="Period">
+    <div><label for="preset">Period</label>
+      <select id="preset" name="preset" class="form-select">{% for k, v in presets.items %}<option value="{{ k }}" {% if k == preset %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div><label for="start">From</label><input id="start" type="date" name="start" value="{{ start|date:'Y-m-d' }}" class="form-control"></div>
+    <div><label for="end">To</label><input id="end" type="date" name="end" value="{{ end|date:'Y-m-d' }}" class="form-control"></div>
+    <button class="btn-primary-token" type="submit">Show</button>
+  </form>
+  {% if error %}<p class="text-danger mt-2 mb-0" role="alert">{{ error }}</p>{% endif %}
+  <p class="mt-3 mb-0"><strong>{{ label }}:</strong> {{ start|date:"d M Y" }} to {{ end|date:"d M Y" }}</p>
+</div>
+
+<section aria-labelledby="h-collections" class="mb-3">
+  <h2 id="h-collections" class="workspace-h2">Cash collections <span class="text-muted-token">(subscription revenue)</span></h2>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Subscription collections</div><div class="stat-value">{{ cards.subscription_collections|rupees }}</div><div class="stat-note">Cash {{ cards.by_method.cash|rupees }} · UPI {{ cards.by_method.upi|rupees }} (all money in and out)</div></div>
+  </div>
+  <p class="text-muted-token small mt-2 mb-0">Subscription fees are never refundable. Partial payments do not exist: a subscription is paid in full before it starts, so there are no outstanding subscription balances.</p>
+</section>
+
+<section aria-labelledby="h-tokens" class="mb-3">
+  <h2 id="h-tokens" class="workspace-h2">Membership tokens <span class="text-muted-token">(refundable deposits &mdash; a liability, not revenue)</span></h2>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Token collections</div><div class="stat-value">{{ cards.token_collections|rupees }}</div><div class="stat-note">Cash received in the period</div></div>
+    <div class="stat-card"><div class="stat-label">Token refunds</div><div class="stat-value">{{ cards.token_refunds|rupees }}</div><div class="stat-note">Cash paid back in the period</div></div>
+    <div class="stat-card"><div class="stat-label">Token forfeitures</div><div class="stat-value">{{ cards.token_forfeitures|rupees }}</div><div class="stat-note">No cash moves; by effective date</div></div>
+    <div class="stat-card"><div class="stat-label">Token balance held now</div><div class="stat-value">{{ cards.token_balance_held|rupees }}</div><div class="stat-note">All members, today &mdash; not revenue</div></div>
+  </div>
+</section>
+
+<section aria-labelledby="h-adjust" class="mb-3">
+  <h2 id="h-adjust" class="workspace-h2">Adjustments and reversals <span class="text-muted-token">(owner-approved corrections)</span></h2>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Adjustments &mdash; money in</div><div class="stat-value">{{ cards.adjustments_in|rupees }}</div></div>
+    <div class="stat-card"><div class="stat-label">Adjustments &mdash; money out</div><div class="stat-value">{{ cards.adjustments_out|rupees }}</div><div class="stat-note">Never a subscription-fee refund</div></div>
+    <div class="stat-card"><div class="stat-label">Reversals &mdash; money in</div><div class="stat-value">{{ cards.reversals_in|rupees }}</div></div>
+    <div class="stat-card"><div class="stat-label">Reversals &mdash; money out</div><div class="stat-value">{{ cards.reversals_out|rupees }}</div></div>
+  </div>
+</section>
+
+<section aria-labelledby="h-ledger" class="card-surface">
+  <h2 id="h-ledger" class="workspace-h2">Transaction ledger</h2>
+  <form method="get" class="filter-grid mb-3" role="search" aria-label="Filter transactions">
+    <input type="hidden" name="preset" value="{{ preset }}">
+    {% if preset == 'custom' %}<input type="hidden" name="start" value="{{ start|date:'Y-m-d' }}"><input type="hidden" name="end" value="{{ end|date:'Y-m-d' }}">{% endif %}
+    {% if member %}<input type="hidden" name="member" value="{{ member.pk }}">{% endif %}
+    <div><label for="q">Member</label><input id="q" name="q" value="{{ q }}" class="form-control" placeholder="Name or member ID"></div>
+    <div><label for="kind">Transaction type</label>
+      <select id="kind" name="kind" class="form-select"><option value="">All types</option>{% for value, text in kinds %}<option value="{{ value }}" {% if value == kind %}selected{% endif %}>{{ text }}</option>{% endfor %}</select></div>
+    <div><label for="mode">Payment mode</label>
+      <select id="mode" name="mode" class="form-select"><option value="">All modes</option>{% for value, text in modes %}<option value="{{ value }}" {% if value == mode %}selected{% endif %}>{{ text }}</option>{% endfor %}</select></div>
+    <div><label for="receipt">Receipt number</label><input id="receipt" name="receipt" value="{{ receipt }}" class="form-control" placeholder="e.g. SUB-2026-000001"></div>
+    <div class="filter-actions"><button class="btn-primary-token" type="submit">Filter</button> <a href="{% url 'finance:payments' %}?preset={{ preset }}{% if preset == 'custom' %}&start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}{% endif %}">Clear filters</a></div>
+  </form>
+  {% if member %}<p class="small">Showing only <strong>{{ member.full_name }}</strong> ({{ member.membership_no }}). <a href="{% url 'finance:payments' %}?preset={{ preset }}">Show all members</a></p>{% endif %}
+  <p class="text-muted-token small">Dates are the financial (effective) date. Amounts are exact; money out is shown with a minus sign.</p>
+  <div style="overflow-x:auto"><table class="table table-sm">
+    <thead><tr><th>Receipt</th><th>Date</th><th>Member</th><th>Type</th><th>Mode</th><th class="text-end">Amount</th><th>Reference</th><th>Action</th></tr></thead>
+    <tbody>
+    {% for r in page %}{% with t=r.txn %}
+      <tr>
+        <td>{% if t.receipt_no %}{{ t.receipt_no }}{% else %}<span class="text-muted-token">&mdash;</span>{% endif %}</td>
+        <td>{{ t.effective_date|date:"d M Y" }}</td>
+        <td><a href="{% url 'members:detail' t.member_id %}">{{ t.member.full_name }}</a><br><span class="small text-muted-token">{{ t.member.membership_no }}</span></td>
+        <td>{{ r.kind_label }}{% if r.reversed %} <span class="badge-token">Reversed</span>{% endif %}</td>
+        <td>{% if r.mode %}{{ r.mode }}{% else %}<span class="text-muted-token">&mdash;</span>{% endif %}</td>
+        <td class="text-end">{% if r.flow == 'out' %}&minus;{% endif %}{{ t.amount_paise|rupees }}{% if r.flow == 'none' %}<br><span class="small text-muted-token">no cash</span>{% endif %}</td>
+        <td>{% if r.reference %}{{ r.reference }}{% else %}<span class="text-muted-token">&mdash;</span>{% endif %}</td>
+        <td><a href="{% url 'finance:payments_detail' t.pk %}">Details</a>{% if t.receipt_document_id %} · <a href="{% url 'finance:receipt' t.receipt_document_id %}">Receipt</a>{% endif %}</td>
+      </tr>
+    {% endwith %}
+    {% empty %}<tr><td colspan="8" class="text-muted-token">No transactions match these filters in this period. Widen the period or clear the filters.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% include "partials/pagination.html" %}
+</section>
+{% endblock %}

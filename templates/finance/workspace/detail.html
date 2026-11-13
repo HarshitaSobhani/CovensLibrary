@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% load money %}
+{% block title %}Transaction - {{ library.library_name }}{% endblock %}
+{% block content %}
+{% include "finance/workspace/_tabs.html" %}
+<p><a href="{% url 'finance:payments' %}?member={{ txn.member_id }}&preset=year">&larr; Back to this member's transactions</a></p>
+
+<section class="card-surface mb-3" aria-labelledby="h-txn">
+  <h2 id="h-txn" class="workspace-h2">{{ row.kind_label }}{% if txn.receipt_no %} &mdash; {{ txn.receipt_no }}{% endif %}</h2>
+  <dl class="detail-grid">
+    <dt>Member</dt><dd><a href="{% url 'members:detail' txn.member_id %}">{{ txn.member.full_name }}</a> ({{ txn.member.membership_no }}){% if txn.member.anonymised_at %} <span class="badge-token">Anonymised</span>{% endif %}</dd>
+    <dt>Amount</dt><dd>{% if txn.cash_flow == 'out' %}&minus;{% endif %}{{ txn.amount_paise|rupees }} <span class="text-muted-token">({{ txn.get_cash_flow_display|lower }})</span></dd>
+    <dt>Financial date</dt><dd>{{ txn.effective_date|date:"d M Y" }}</dd>
+    <dt>Recorded at</dt><dd>{{ txn.processed_at|date:"d M Y H:i" }} by {% if txn.recorded_by %}{{ txn.recorded_by.get_username }}{% else %}system process ({{ txn.recorded_by_system }}){% endif %}</dd>
+    <dt>Payment mode</dt><dd>{% if row.mode %}{{ row.mode }}{% else %}No payment entry (no cash moved){% endif %}</dd>
+    <dt>Internal ID</dt><dd class="small">{{ txn.internal_txn_id }}</dd>
+    {% if reason %}<dt>Reason</dt><dd>{{ reason }}</dd>{% endif %}
+    {% if txn.backdated %}<dt>Backdated</dt><dd>Yes &mdash; {{ backdate_reason }} (owner confirmed the financial backdating)</dd>{% endif %}
+    {% if txn.receipt_no %}<dt>Receipt</dt><dd>{{ txn.receipt_no }} issued {{ txn.receipt_issued_on|date:"d M Y" }} &middot; <a href="{% url 'finance:receipt' txn.receipt_document_id %}">View / print receipt</a> &middot; <a href="{% url 'finance:receipt_pdf' txn.receipt_document_id %}">PDF</a></dd>{% else %}<dt>Receipt</dt><dd>None for this kind of record</dd>{% endif %}
+  </dl>
+  {% if entries %}
+  <h3 class="workspace-h3">Payment entries</h3>
+  <div style="overflow-x:auto"><table class="table table-sm"><thead><tr><th>Mode</th><th>Paid on</th><th class="text-end">Amount</th><th>Reference</th></tr></thead><tbody>
+  {% for item in entries %}<tr><td>{{ item.entry.get_method_display }}</td><td>{{ item.entry.paid_on|date:"d M Y" }}</td><td class="text-end">{{ item.entry.amount_paise|rupees }}</td><td>{% if item.reference %}{{ item.reference }}{% else %}&mdash;{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% endif %}
+</section>
+
+<section class="card-surface mb-3" aria-labelledby="h-links">
+  <h2 id="h-links" class="workspace-h2">Linked records</h2>
+  <dl class="detail-grid">
+    {% if links.subscription %}<dt>Subscription</dt><dd>{{ links.subscription.plan_name_snapshot }} &middot; starts {{ links.subscription.starts_on|date:"d M Y" }}, expires {{ links.subscription.expires_on|date:"d M Y" }} (last valid day {{ links.subscription.last_valid_day|date:"d M Y" }})</dd>{% endif %}
+    {% if links.token_cycle %}<dt>Token cycle</dt><dd>Cycle {{ links.token_cycle.cycle_no }} &middot; ledger entry: {{ links.token_entry.get_entry_type_display }}{% if links.token_entry.forfeiture_trigger %} ({{ links.token_entry.get_forfeiture_trigger_display }}{% if links.token_entry.owner_confirmed %}, owner confirmed{% else %}, automatic{% endif %}){% endif %}</dd>{% endif %}
+    {% if links.loan %}<dt>Loan</dt><dd><a href="{% url 'circulation:detail' links.loan.pk %}">Loan #{{ links.loan.pk }}</a> &middot; due {{ links.loan.due_on|date:"d M Y" }}</dd>{% endif %}
+    {% if links.original %}<dt>{% if txn.kind == 'reversal' %}Reverses{% else %}Adjusts{% endif %}</dt><dd><a href="{% url 'finance:payments_detail' links.original.pk %}">{{ links.original.get_kind_display }}{% if links.original.receipt_no %} {{ links.original.receipt_no }}{% endif %}</a> ({{ links.original.amount_paise|rupees }}, {{ links.original.effective_date|date:"d M Y" }})</dd>{% endif %}
+    {% if links.reversed_by %}<dt>Reversed by</dt><dd><a href="{% url 'finance:payments_detail' links.reversed_by.pk %}">Reversal of {{ links.reversed_by.effective_date|date:"d M Y" }}</a> &mdash; the original record is unchanged</dd>{% endif %}
+    {% for adj in links.adjustments %}<dt>Adjusted by</dt><dd><a href="{% url 'finance:payments_detail' adj.pk %}">{{ adj.receipt_no }}</a> ({{ adj.amount_paise|rupees }}, {{ adj.effective_date|date:"d M Y" }})</dd>{% endfor %}
+    {% for line in links.receipt_lines %}<dt>Same receipt printout</dt><dd><a href="{% url 'finance:payments_detail' line.pk %}">{{ line.get_kind_display }} {{ line.receipt_no }}</a></dd>{% endfor %}
+  </dl>
+  {% if not links.subscription and not links.token_cycle and not links.loan and not links.original and not links.reversed_by and not links.adjustments and not links.receipt_lines %}<p class="text-muted-token mb-0">No linked records.</p>{% endif %}
+  <p class="small text-muted-token mt-3 mb-0">This page is read-only. Original records are never edited or deleted; corrections are separate reversal or adjustment records made from the member's profile.{% if can_reverse %} <a href="{% url 'finance:reverse' txn.pk %}">Reverse this record&hellip;</a>{% endif %}</p>
+</section>
+
+<section class="card-surface" aria-labelledby="h-audit">
+  <h2 id="h-audit" class="workspace-h2">Audit history</h2>
+  {% if audit %}
+  <div style="overflow-x:auto"><table class="table table-sm"><thead><tr><th>When</th><th>Action</th><th>By</th><th>Details</th></tr></thead><tbody>
+  {% for item in audit %}<tr><td>{{ item.event.occurred_at|date:"d M Y H:i" }}</td><td>{{ item.event.action }}</td><td>{{ item.actor }}</td><td class="small">{% for key, value in item.details %}<span class="text-muted-token">{{ key }}:</span> {{ value }}{% if not forloop.last %} &middot; {% endif %}{% endfor %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="text-muted-token mb-0">No audit events are linked to this record.</p>{% endif %}
+</section>
+{% endblock %}

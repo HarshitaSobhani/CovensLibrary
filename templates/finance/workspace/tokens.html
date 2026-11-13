@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% load money %}
+{% block title %}Membership tokens - {{ library.library_name }}{% endblock %}
+{% block content %}
+{% include "finance/workspace/_tabs.html" %}
+
+<section class="card-surface mb-3" aria-labelledby="h-need">
+  <h2 id="h-need" class="workspace-h2">Members who need a fresh {{ library.token_amount_paise|rupees }} token</h2>
+  <p class="text-muted-token small">Active members who cannot borrow or renew until a token is on hold. Collect the token from the member's profile; the member ID stays the same.</p>
+  {% if needs_token %}
+  <div style="overflow-x:auto"><table class="table table-sm">
+    <thead><tr><th>Member</th><th>Why</th><th>Action</th></tr></thead>
+    <tbody>{% for member, why in needs_token %}<tr><td><a href="{% url 'members:detail' member.pk %}">{{ member.full_name }}</a> <span class="small text-muted-token">{{ member.membership_no }}</span></td><td>{{ why }}</td><td><a href="{% url 'members:detail' member.pk %}">Open profile</a> · <a href="{% url 'finance:payments' %}?member={{ member.pk }}&preset=year">Payments</a></td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="text-muted-token mb-0">No active member needs a new token.</p>{% endif %}
+</section>
+
+<div class="stat-grid mb-3">
+  {% for label, total in totals %}
+  <div class="stat-card"><div class="stat-label">{{ label }}</div><div class="stat-value">{{ total.count }}</div><div class="stat-note">{{ total.paise|rupees }} collected</div></div>
+  {% endfor %}
+</div>
+<p class="text-muted-token small">Counts follow the filter below. A token is not revenue.</p>
+
+<section class="card-surface" aria-labelledby="h-act">
+  <h2 id="h-act" class="workspace-h2">Token activity</h2>
+  <form method="get" class="filter-grid mb-3" role="search" aria-label="Filter tokens">
+    <div><label for="status">Status</label>
+      <select id="status" name="status" class="form-select"><option value="">All</option>{% for value, text in statuses %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ text }}</option>{% endfor %}</select></div>
+    <div><label for="start">Any token event from</label><input id="start" type="date" name="start" value="{{ start|date:'Y-m-d' }}" class="form-control"></div>
+    <div><label for="end">to</label><input id="end" type="date" name="end" value="{{ end|date:'Y-m-d' }}" class="form-control"></div>
+    <div class="filter-actions"><button class="btn-primary-token" type="submit">Filter</button> <a href="{% url 'finance:payments_tokens' %}">Clear filters</a></div>
+  </form>
+  {% if error %}<p class="text-danger" role="alert">{{ error }}</p>{% endif %}
+  <div style="overflow-x:auto"><table class="table table-sm">
+    <thead><tr><th>Member</th><th>Cycle</th><th>Status</th><th class="text-end">Held now</th><th>Collected</th><th>Refunded / forfeited</th><th>Forfeiture reason</th><th>Records</th></tr></thead>
+    <tbody>
+    {% for r in page %}
+      <tr>
+        <td><a href="{% url 'members:detail' r.member.pk %}">{{ r.member.full_name }}</a><br><span class="small text-muted-token">{{ r.member.membership_no }}</span></td>
+        <td>{{ r.cycle.cycle_no }}</td>
+        <td>{{ r.status_label }}</td>
+        <td class="text-end">{% if r.state == 'held' %}{{ r.amount_paise|rupees }}{% else %}<span class="text-muted-token">&mdash;</span>{% endif %}</td>
+        <td>{% if r.collected_on %}{{ r.collected_on|date:"d M Y" }}<br><span class="small text-muted-token">{{ r.collected_paise|rupees }}</span>{% else %}&mdash;{% endif %}</td>
+        <td>{% if r.closed_on %}{{ r.closing_kind }} {{ r.closed_on|date:"d M Y" }}{% else %}<span class="text-muted-token">&mdash;</span>{% endif %}</td>
+        <td>{% if r.closing_kind == 'Forfeited' %}{{ r.forfeiture_trigger }}{% if r.forfeiture_reason %}<br><span class="small">{{ r.forfeiture_reason }}</span>{% endif %}{% else %}<span class="text-muted-token">&mdash;</span>{% endif %}</td>
+        <td>
+          {% if r.collection_txn %}<a href="{% url 'finance:payments_detail' r.collection_txn.pk %}">Collection</a>{% endif %}
+          {% if r.closing_txn %} · <a href="{% url 'finance:payments_detail' r.closing_txn.pk %}">{{ r.closing_kind }}</a>{% endif %}
+        </td>
+      </tr>
+    {% empty %}<tr><td colspan="8" class="text-muted-token">No tokens match these filters.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% include "partials/pagination.html" %}
+</section>
+{% endblock %}

@@ -40,6 +40,26 @@ a:hover { color: var(--link); text-decoration-thickness: 2px; }
   .login-card { padding: 2rem 1.25rem; }
 }
 
+/* Payments & Tokens workspace */
+.workspace-title { font-family: var(--font-display); font-size: 1.6rem; margin: 0 0 .75rem; }
+.workspace-h2 { font-size: 1.1rem; margin: 0 0 .75rem; }
+.workspace-h3 { font-size: 1rem; margin: 1rem 0 .5rem; }
+.workspace-tabs { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.workspace-tabs a { padding: .5rem 1rem; text-decoration: none; color: var(--text-muted); border-bottom: 3px solid transparent; }
+.workspace-tabs a.active { color: var(--text); border-bottom-color: var(--primary); font-weight: 600; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: .5rem; padding: 1rem 1.15rem; }
+.stat-label { color: var(--text-muted); font-size: .85rem; }
+.stat-value { font-size: 1.5rem; font-weight: 600; margin: .15rem 0; font-variant-numeric: tabular-nums; }
+.stat-note { color: var(--text-muted); font-size: .8rem; }
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .75rem 1rem; align-items: end; }
+.filter-actions { display: flex; gap: .75rem; align-items: center; }
+.badge-token { display: inline-block; font-size: .72rem; padding: .05rem .45rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--surface-2); color: var(--text); }
+.detail-grid { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1.25rem; margin: 0; }
+.detail-grid dt { color: var(--text-muted); font-weight: 500; }
+.detail-grid dd { margin: 0; }
+@media (max-width: 768px) { .detail-grid { grid-template-columns: 1fr; gap: 0; } .detail-grid dd { margin-bottom: .6rem; } }
+
 /* Tables */
 .table { --bs-table-color: var(--text); --bs-table-bg: transparent; --bs-table-border-color: var(--border);
   --bs-table-striped-bg: var(--surface-2); --bs-table-hover-bg: var(--surface-2); color: var(--text); }
