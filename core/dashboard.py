@@ -100,9 +100,22 @@ def failed_emails(limit=LIST_LIMIT):
     }
 
 
-def backup_failures():
-    # Backups are built in Phase 7a; the section exists with an honest empty state.
-    return {"count": 0, "rows": [], "available": False}
+def backup_failures(now=None):
+    """Backup health (Phase 7a): stale (over 26 h) or never succeeded, plus failed runs since the
+    last success."""
+    from django.apps import apps
+
+    if not apps.is_installed("backups"):
+        return {"count": 0, "rows": [], "available": False}
+    from backups import services
+
+    health = services.health(now)
+    return {
+        "count": len(health["problems"]) + health["failure_count"],
+        "available": True,
+        "health": health,
+        "rows": health["failures"],
+    }
 
 
 def counts(today):

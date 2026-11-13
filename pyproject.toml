@@ -14,5 +14,5 @@ select = ["E", "F", "W", "I", "B", "DJ"]
 quote-style = "double"
 
 [tool.coverage.run]
-source = ["accounts", "core", "audit", "members", "catalogue", "finance", "memberships", "circulation", "communications", "reports", "config"]
+source = ["accounts", "core", "audit", "members", "catalogue", "finance", "memberships", "circulation", "communications", "reports", "backups", "config"]
 omit = ["*/migrations/*", "*/tests/*"]

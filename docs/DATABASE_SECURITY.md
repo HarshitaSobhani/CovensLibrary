@@ -122,3 +122,11 @@ Run these in order on any database that already holds notification records. A fr
 
 ### Retention limitation (documented, not a release blocker)
 The 90-day address retention is a **database-assisted retention floor, not tamper-proof retention**. The trigger reads `members_member.anonymised_at`, and the runtime role may update that table, so a compromised application role could alter the clock (backdating it would erase an address early; clearing it would freeze a record). The database cannot independently guarantee the retention clock against its own runtime role. Erasing early never exposes data, so the practical risk is low. Backups taken earlier keep the data until their normal expiry (R-28).
+
+
+## Phase 7a table `backups_backuprun`
+Class NO_DELETE. Trigger `backups_backuprun_guard` (search_path `pg_catalog`): no delete (also for the owner role); a finished run (succeeded or failed) cannot change except `verified_at` and a one-way `remote_deleted_at`; a run cannot return to `running`. CHECKs: valid status and kind, a success has a hash, remote id, size, finish time and verification time; a partial unique index allows one `running` row. Backups run as the RUNTIME role: `pg_dump` needs SELECT on every table and sequence, which L6 grants (verified by a test that runs a full backup as `coven_app` and proves edits and deletes of the history are denied). Restores need the owner role (Phase 7b). Migrations `backups.0001-0002` and `core.0010` ran as `coven_owner`.
+
+
+## Phase 7b restore and the security model
+Restore runs as `coven_owner` into an existing database that role owns (it never creates one). Replacing a non-empty database removes what the owner role owns there (`DROP OWNED BY CURRENT_USER`) after a verified safety backup, restores with `--no-owner --no-acl`, re-applies the runtime grants (`apply_db_grants` logic) and inspects the result (`check_db_security` logic) before reporting success. New table `backups_restorerun`: class APPEND_ONLY, trigger `backups_restorerun_append_only` (shared `core_reject_change()`); migrations `backups.0003-0004` ran as `coven_owner`. The runtime role cannot restore: it cannot drop objects or create tables.

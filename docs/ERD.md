@@ -428,3 +428,10 @@ Search: lower(member.full_name), mobile, membership_no, edition title/author/isb
 
 ## Phase 5
 `NOTIFICATION` (`communications_notification`): `dedupe_key` unique (= the outbox event's key, or `reminder:...`), `source` (event / schedule), `event_id` (UUID of the outbox event, no foreign key), `kind`, `member` (FK), `recipient_email` (the address used), `subject`, `body`, `status` (prepared / smtp_accepted / smtp_failed / failed / skipped), `skip_code`, `skip_reason`, `attempt_count` (max 4), `next_attempt_at`, `last_attempt_at`, `last_error`, `accepted_at`, `claim_token`, `claimed_until`, timestamps. `scheduled_for` (the original due date of a reminder; null for event emails). `NOTIFICATION_ATTEMPT` (append-only): `notification` FK, `attempt_no`, `attempted_at`, `accepted`, `error` (no address). `MESSAGE_TEMPLATE`: `key`, `body`. An outbox event is "consumed" exactly when a NOTIFICATION with its `dedupe_key` exists. `LIBRARY_SETTING.dashboard_config` (JSON) holds dashboard visibility, order, attention criteria and the expiry window.
+
+
+## Phase 7a (as built)
+`BACKUP_RUN` (`backups_backuprun`): `kind` is `daily` or `pre_restore` (the MONTHLY backups are computed from the successful runs, not a row kind, D-29c), `trigger` (scheduled / catchup / manual / pre_restore), `status` (running / succeeded / failed), `started_at`, `finished_at`, `file_name`, `size_bytes`, `sha256` (of the encrypted file), `key_fingerprint`, `destination`, `remote_id`, `manifest` (JSON, without file lists), `error_summary`, `verified_at`, `remote_deleted_at`. `RESTORE_RUN` arrives in Phase 7b. `LIBRARY_SETTING.backup_time` is now required (default 19:45).
+
+## Phase 7b (as built)
+`RESTORE_RUN` (`backups_restorerun`, append-only): `backup_file_name`, `backup_sha256`, `key_fingerprint`, `target_database`, `status` (succeeded / verification_failed / failed), `started_at`, `finished_at`, `pre_restore` (JSON: the safety backup), `verification` (JSON), `key_imported`, `error_summary`. A restore writes it, with an audit event, into the RESTORED database. The manifest of every backup now carries the row count of every table taken in the same snapshot as the dump.

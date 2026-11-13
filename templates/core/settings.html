@@ -27,4 +27,14 @@
   <form method="post" id="move-{{ key }}-down">{% csrf_token %}<input type="hidden" name="action" value="down"><input type="hidden" name="section" value="{{ key }}"></form>
   {% endfor %}
 </div>
+<div class="card-surface mb-3">
+  <h2 style="font-size:1.1rem">Daily backup</h2>
+  <p class="text-muted-token">The encrypted backup runs once a day at this time (Asia/Kolkata). If the computer was off, it runs at the next launch.</p>
+  <form method="post" class="d-flex gap-2 align-items-end flex-wrap">{% csrf_token %}
+    <input type="hidden" name="action" value="backup_time">
+    <div><label for="backup_time">Backup time (HH:MM)</label><input id="backup_time" name="backup_time" value="{{ backup_time|time:'H:i' }}" class="form-control" style="max-width:9rem" pattern="[0-2][0-9]:[0-5][0-9]" required></div>
+    <button class="btn-primary-token" type="submit">Save</button>
+  </form>
+</div>
+
 {% endblock %}

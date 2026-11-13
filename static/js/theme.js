@@ -15,3 +15,11 @@
     });
   });
 })();
+
+// Buttons marked data-print open the browser's print dialog (no inline handlers: the
+// Content-Security-Policy allows scripts only from this site).
+document.addEventListener("click", function (event) {
+  if (event.target.closest && event.target.closest("[data-print]")) {
+    window.print();
+  }
+});

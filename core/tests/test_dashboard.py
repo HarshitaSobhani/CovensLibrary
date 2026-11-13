@@ -74,7 +74,8 @@ class SectionTests(TestCase):
         )
         self.assertEqual(data["overdue"]["count"], 0)
         self.assertEqual(data["attention"], [])
-        self.assertFalse(data["backup_failures"]["available"])
+        self.assertTrue(data["backup_failures"]["available"])  # Phase 7a
+        self.assertEqual(data["backup_failures"]["count"], 1)  # no backup has ever succeeded
         self.assertEqual(data["counts"]["copies"], 0)
 
     def test_overdue_section_lists_only_overdue_active_loans(self):

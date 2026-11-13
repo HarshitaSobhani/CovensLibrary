@@ -8,7 +8,14 @@
   {% for r in data.rows %}<tr><td><a href="{% url 'members:detail' r.subscription.member_id %}">{{ r.subscription.member.full_name }}</a></td><td>{{ r.subscription.expires_on|date:"j M Y" }}</td><td>{{ r.days }}</td></tr>{% endfor %}
   </tbody></table>{% else %}<p class="text-muted-token mb-0">No subscriptions expire in the chosen window.</p>{% endif %}
 {% elif key == "backup_failures" %}
-  <p class="text-muted-token mb-0">No backup has been configured yet. Backups arrive in a later phase; failures will appear here.</p>
+  {% if not data.available %}<p class="text-muted-token mb-0">Backups are not available.</p>
+  {% else %}
+    {% for problem in data.health.problems %}<p class="text-danger mb-1" role="alert">{{ problem }}</p>{% endfor %}
+    {% if data.health.last_success %}<p class="mb-1">Last successful backup: {{ data.health.last_success.started_at|date:"j M Y H:i" }} ({{ data.health.last_success.get_trigger_display }}, stored at {{ data.health.last_success.destination }}, verified).</p>{% endif %}
+    {% if data.rows %}<table class="table"><thead><tr><th>When</th><th>Trigger</th><th>Error</th></tr></thead><tbody>
+    {% for run in data.rows %}<tr><td>{{ run.started_at|date:"j M Y H:i" }}</td><td>{{ run.get_trigger_display }}</td><td>{{ run.error_summary }}</td></tr>{% endfor %}
+    </tbody></table>{% elif not data.health.problems %}<p class="text-muted-token mb-0">No backup problems.</p>{% endif %}
+  {% endif %}
 {% elif key == "failed_emails" %}
   {% if not data.available %}<p class="text-muted-token mb-0">Email sending is not set up yet.</p>
   {% elif data.rows %}<table class="table"><thead><tr><th>Member</th><th>Email</th><th>Status</th><th>Attempts</th><th>Last error</th></tr></thead><tbody>

@@ -1,5 +1,5 @@
 import calendar as pycalendar
-from datetime import date
+from datetime import date, time
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -66,6 +66,29 @@ def calendar_view(request):
     )
 
 
+def _save_backup_time(request, setting):
+    raw = request.POST.get("backup_time", "").strip()
+    try:
+        hour, minute = (int(part) for part in raw.split(":"))
+        chosen = time(hour, minute)
+    except ValueError:
+        messages.error(request, "Enter the backup time as HH:MM (24-hour), for example 19:45.")
+        return redirect("core:settings")
+    if chosen != setting.backup_time:
+        old = setting.backup_time
+        setting.backup_time = chosen
+        setting.save(update_fields=["backup_time"])
+        record(
+            "backup.time_changed",
+            request.user,
+            "LibrarySetting",
+            "1",
+            {"from": old.strftime("%H:%M") if old else "", "to": chosen.strftime("%H:%M")},
+        )
+    messages.success(request, f"The daily backup time is {chosen:%H:%M} (Asia/Kolkata).")
+    return redirect("core:settings")
+
+
 @login_required
 def dashboard_settings(request):
     setting = LibrarySetting.load()
@@ -73,6 +96,8 @@ def dashboard_settings(request):
     if request.method == "POST":
         new = dict(conf)
         action = request.POST.get("action", "save")
+        if action == "backup_time":
+            return _save_backup_time(request, setting)
         if action in ("up", "down"):
             new["order"] = dashboard_config.move(
                 conf["order"], request.POST.get("section", ""), -1 if action == "up" else 1
@@ -118,6 +143,7 @@ def dashboard_settings(request):
             "sections": [
                 (k, dashboard_config.SECTIONS[k], conf["visible"][k]) for k in conf["order"]
             ],
+            "backup_time": setting.backup_time,
             "criteria": [
                 (k, label, conf["criteria"][k]) for k, label in dashboard_config.CRITERIA.items()
             ],

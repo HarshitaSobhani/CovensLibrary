@@ -23,3 +23,22 @@ def database_security(app_configs, **kwargs):
         level = checks.Error if f.level == "error" else checks.Warning
         out.append(level(f.message, id=f.code))
     return out
+
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]", "testserver"}
+
+
+@checks.register()
+def loopback_only(app_configs, **kwargs):
+    """The application is reachable from this computer only (decision B37): refuse a configuration
+    that accepts any other Host header."""
+    bad = [h for h in settings.ALLOWED_HOSTS if h not in LOOPBACK_HOSTS]
+    if not bad:
+        return []
+    return [
+        checks.Error(
+            f"ALLOWED_HOSTS may contain only loopback names (127.0.0.1, localhost); found {bad}.",
+            hint="The application must never be reachable from the network (B37).",
+            id="coven.E010",
+        )
+    ]

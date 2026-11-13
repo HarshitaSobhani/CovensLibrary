@@ -1,4 +1,5 @@
 import uuid
+from datetime import time
 
 from django.db import models
 from django.utils import timezone
@@ -20,7 +21,7 @@ class LibrarySetting(models.Model):
     token_amount_paise = models.PositiveBigIntegerField(default=50000)
     issue_block_days = models.PositiveSmallIntegerField(default=15)
     receipt_footer = models.CharField(max_length=300, blank=True)
-    backup_time = models.TimeField(null=True, blank=True)
+    backup_time = models.TimeField(default=time(19, 45))  # D-29b: 19:45 Asia/Kolkata
     drive_folder_id = models.CharField(max_length=200, blank=True)
     dashboard_config = models.JSONField(default=dict, blank=True)  # see core/dashboard_config.py
 

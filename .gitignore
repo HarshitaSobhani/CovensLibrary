@@ -15,6 +15,6 @@ htmlcov/
 .ruff_cache/
 # Runtime data (never committed)
 /media/
-/backups/
+/backup-data/  # local backup output, never committed (the application code lives in backups/)
 /staticfiles/
 /import_staging/

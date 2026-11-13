@@ -43,10 +43,13 @@ INSTALLED_APPS = [
     "circulation",
     "communications",
     "reports",
+    "backups",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "core.middleware.SecurityHeadersMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -112,12 +115,19 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "en-in"
+APP_VERSION = "0.7.0"
 TIME_ZONE = "Asia/Kolkata"
 USE_I18N = True
 USE_TZ = True
 
+MEDIA_ROOT = BASE_DIR / "media"
 STATIC_URL = "static/"
+STATIC_ROOT = Path(env("STATIC_ROOT", str(BASE_DIR / "staticfiles")))
 STATICFILES_DIRS = [BASE_DIR / "static"]
+WHITENOISE_USE_FINDERS = (
+    DEBUG  # development serves straight from static/; production uses collectstatic
+)
+WHITENOISE_AUTOREFRESH = DEBUG
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -126,6 +136,11 @@ SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", False)
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", False)
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 
 # Email (SMTP). Credentials come only from the environment. Local development prints to the console.
 EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
@@ -138,3 +153,10 @@ EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
 EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", "15"))
 NOTIFY_AFTER_WRITE = env_bool("NOTIFY_AFTER_WRITE", True)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "noreply@localhost")
+
+# Backups (Phase 7a). Secrets are never configured here: the working key and Google tokens live in
+# the Windows Credential Manager (backups/keystore.py).
+BACKUP_KEYSTORE = env("BACKUP_KEYSTORE", "keyring")  # "memory" only in tests
+BACKUP_DESTINATION = env("BACKUP_DESTINATION", "drive")  # "drive" or "local:<folder>"
+PG_DUMP_PATH = env("PG_DUMP_PATH", "pg_dump")
+BACKUP_TMP_DIR = env("BACKUP_TMP_DIR", "")  # empty = the system temporary folder

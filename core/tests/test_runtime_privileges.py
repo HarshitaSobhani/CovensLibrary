@@ -382,6 +382,24 @@ batch = svc.stage_import(SimpleUploadedFile("b.xlsx", b.getvalue()), actor=owner
 svc.set_options(batch, create_missing_categories=False, copy_id_mode="generate", isbn_warnings_acknowledged=True)
 svc.execute_import(batch, actor=owner)
 out["member"] = m.membership_no
+import tempfile
+from backups import keystore as bks, services as bsv
+from backups.destinations import LocalDirectoryDestination
+from backups.models import BackupRun
+bks.save_working_key(bks.generate_key())
+backup_dir = tempfile.mkdtemp(prefix="coven-rt-backup-")
+brun = bsv.run_backup(destination=LocalDirectoryDestination(backup_dir), trigger="manual")
+out["backup"] = [brun.status, brun.error_summary, os.path.exists(os.path.join(backup_dir, brun.file_name or "missing"))]
+for name, action in (
+    ("backup_edit", lambda: BackupRun.objects.filter(pk=brun.pk).update(sha256="x")),
+    ("backup_delete", lambda: BackupRun.objects.all()._raw_delete(using="default")),
+):
+    try:
+        with transaction.atomic():
+            action()
+        out[name] = "ALLOWED"
+    except DatabaseError:
+        out[name] = "denied"
 out["phase6b"] = [
     c.get(f"/reports/statement/{m.pk}/?format=pdf").status_code,
     c.post("/reports/export/")["Content-Type"],
@@ -508,6 +526,7 @@ print("RESULT" + json.dumps(out))
                 "DB_HOST": str(connection.settings_dict["HOST"]),
                 "DB_PORT": str(connection.settings_dict["PORT"]),
                 "DB_USER": RUNTIME,
+                "BACKUP_KEYSTORE": "memory",
                 "PYTHONDONTWRITEBYTECODE": "1",
             }
         )
@@ -526,6 +545,8 @@ print("RESULT" + json.dumps(out))
         self.assertEqual(result["phase5a"], [200, 200, 200, 302, 302, 200])
         self.assertEqual(result["phase6"], [200, 200, 200, 200])
         self.assertEqual(result["phase6b"], [200, "application/zip"])
+        self.assertEqual(result["backup"], ["succeeded", "", True])  # pg_dump as coven_app
+        self.assertEqual((result["backup_edit"], result["backup_delete"]), ("denied", "denied"))
         self.assertEqual(result["member"], "COV-M-000001")
         self.assertEqual(result["tamper"], "denied")
         self.assertEqual(result["delete_members"], "denied")

@@ -55,6 +55,7 @@ class MigrationLifecycleTests(TransactionTestCase):
         )
         call_command("migrate", "catalogue", "zero", verbosity=0)
         call_command("migrate", "members", "zero", verbosity=0)
+        call_command("migrate", "backups", "zero", verbosity=0)  # independent of the apps above
         self.assertEqual(one("SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal"), 0)
 
         call_command("migrate", verbosity=0)  # forward, as owner: post_migrate re-applies grants

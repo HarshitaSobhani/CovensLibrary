@@ -34,6 +34,9 @@ APPS = (
     "finance",
     "members",
     "memberships",
+    "communications",
+    "reports",
+    "backups",
     "config",
 )
 

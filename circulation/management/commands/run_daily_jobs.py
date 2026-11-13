@@ -29,3 +29,17 @@ class Command(BaseCommand):
             f"{cycle['reminders']} reminder(s) created, sent: {sent}, "
             f"{cycle['redacted']} retained address(es) erased."
         )
+        from backups.services import run_due_backup
+
+        backup = run_due_backup()
+        if backup is None:
+            self.stdout.write("Backup: not due.")
+        else:
+            self.stdout.write(
+                f"Backup ({backup.trigger}): {backup.status}"
+                + (
+                    f" - {backup.error_summary}"
+                    if backup.status != "succeeded"
+                    else f" - {backup.file_name}"
+                )
+            )

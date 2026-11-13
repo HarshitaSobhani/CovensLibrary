@@ -26,3 +26,6 @@ else:
     )
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+BACKUP_KEYSTORE = "memory"
+WHITENOISE_USE_FINDERS = True  # tests serve static files without collectstatic

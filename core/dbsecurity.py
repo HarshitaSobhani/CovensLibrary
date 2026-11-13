@@ -81,6 +81,9 @@ TABLE_POLICIES = {
     "communications_notification": NO_DELETE,  # state moves forward only (guard trigger)
     "communications_notificationattempt": APPEND_ONLY,  # every SMTP attempt, with its error
     "communications_messagetemplate": MUTABLE,  # owner-editable WhatsApp texts
+    # --- backups (history of every run; finished rows change only for verification/retention)
+    "backups_backuprun": NO_DELETE,
+    "backups_restorerun": APPEND_ONLY,  # the record of every restore; never edited
     # --- Django framework tables (written only by migrations, i.e. by the owner)
     "django_migrations": READ_ONLY,
     "django_content_type": READ_ONLY,
@@ -99,6 +102,8 @@ REQUIRED_TRIGGERS = {
     "circulation_loan": ("circulation_loan_guard",),
     "circulation_loanrenewal": ("circulation_loanrenewal_append_only",),
     "circulation_pendingforfeiture": ("circulation_pending_forfeiture_guard",),
+    "backups_backuprun": ("backups_backuprun_guard",),
+    "backups_restorerun": ("backups_restorerun_append_only",),
     "communications_notification": ("communications_notification_guard",),
     "communications_notificationattempt": ("communications_notificationattempt_append_only",),
     "core_settingchangeevent": ("core_settingchangeevent_append_only",),

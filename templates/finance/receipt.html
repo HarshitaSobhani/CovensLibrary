@@ -18,7 +18,7 @@
   <p class="small">{{ snap.library.footer }}</p>
   <div class="d-flex gap-2 no-print">
     <a class="btn-primary-token" style="text-decoration:none" href="{% url 'finance:receipt_pdf' document.pk %}">Download PDF</a>
-    <button class="btn-primary-token" type="button" onclick="window.print()">Print</button>
+    <button class="btn-primary-token" type="button" data-print>Print</button>
     <a href="{% url 'members:detail' document.member_id %}">Back to member</a>
   </div>
 </div>
