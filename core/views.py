@@ -3,8 +3,11 @@ from datetime import date, time
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import connection
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_safe
 
 from audit.services import record
 
@@ -149,3 +152,20 @@ def dashboard_settings(request):
             ],
         },
     )
+
+
+@require_safe
+def healthz(request):
+    """Is the application up and can it reach its database? Used by the launcher before it opens
+    the browser. Public on purpose (loopback only) and deliberately tiny: no versions, no paths,
+    no counts, no error text."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        body, status = {"app": "coven-library", "status": "ok"}, 200
+    except Exception:  # noqa: BLE001 - the reason goes to the log, never to the response
+        body, status = {"app": "coven-library", "status": "unavailable"}, 503
+    response = JsonResponse(body, status=status)
+    response["Cache-Control"] = "no-store"
+    return response

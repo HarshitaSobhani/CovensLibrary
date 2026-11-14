@@ -2,8 +2,14 @@
 
 For the owner and whoever helps them. Commands are run in PowerShell in the application folder with the virtual environment's Python (`.venv\Scripts\python manage.py ...`), as the runtime account unless a step says "owner". Written from the development machine; Windows-specific steps are UNVERIFIED until rehearsed on the Dell.
 
+## 0. Every morning, in three lines (owner)
+1. Double-click **Coven's Library** on the desktop. Wait for "Coven's Library is ready."; the browser opens by itself.
+2. Work as usual. If a window ever says "Could not start the application. Contact support.", do not retry repeatedly: write down the first line of the message and call your support person (details are saved for them).
+3. When you finish, double-click **Stop Library** (or sign out). Nothing needs to be saved first.
+No PowerShell, no commands, no passwords to type except your login to the library page.
+
 ## 1. What runs by itself
-Two Task Scheduler tasks (`docs/DEPLOYMENT.md` section 6): the application at logon, and `run_daily_jobs` at logon and every 5 minutes. Together they post day-8 forfeitures, send emails (and their retries), create the 09:00 reminders, and make the daily encrypted backup (default 19:45, changeable in Settings). If the computer was off, work happens at the next launch.
+The Task Scheduler jobs task (`docs/DEPLOYMENT.md` section 6): `run_daily_jobs` at logon and every 5 minutes (the application itself is started by the owner with the desktop shortcut; an optional logon task can start it too). Together they post day-8 forfeitures, send emails (and their retries), create the 09:00 reminders, and make the daily encrypted backup (default 19:45, changeable in Settings). If the computer was off, work happens at the next launch.
 
 ## 2. Every day (30 seconds)
 Open the dashboard. Look at **Backup failures** (it says "No backup problems." when all is well; it warns when the last good backup is older than 26 hours or none exists), **Failed emails**, **Damaged / lost decisions** and **Token forfeitures**. A backup warning is the one to act on the same day (section 5).
@@ -41,10 +47,13 @@ Restore the newest backup into a scratch database on the same computer: create i
 Date / computer / Windows edition and build / PostgreSQL version / backup file / key source (Credential Manager or recovery key) / every step of `restore_backup` printed `ok` (yes/no) / `check_db_security` owner and runtime (0 errors?) / figures compared / problems found / signed. **Until a record for a clean Windows 11 computer exists, recovery is NOT verified.**
 
 ## 7. Passwords and access
-Owner login: password reset by email, or the local CLI (`python manage.py issue_recovery_code`, a single-use code shown once, valid 15 minutes); five failed logins in 15 minutes are throttled (no lockout). The runtime database role cannot change the schema or edit history. The owner database password exists only in a temporary `.env.owner` during upgrades.
+Owner login: password reset by email, or the local CLI (`python manage.py issue_recovery_code`, a single-use code shown once, valid 15 minutes); five failed logins in 15 minutes are throttled (no lockout). The runtime database role cannot change the schema or edit history. The owner database password is typed (hidden) into `deploy\windows\Run-AsOwner.ps1` when needed and kept only in that process's memory; on a development machine a temporary `.env.owner` may be used. The runtime secrets are in the Windows Credential Manager only; a plaintext environment variable of the same name is refused at start-up.
+
+**Backup-key rotation, rollback, pruning and recovery on a replacement computer** are in `docs/KEY_ROTATION_AND_RECOVERY.md` (decision S-04). Never delete an old paper recovery key until `prune_backup_keys` says no backup at the destination needs it (it now inspects the real destination and refuses when unsure). `import_backup_key` restores a missing key from paper. `backup_status` shows every key and whether a rotation is in progress.
 
 ## 8. Troubleshooting
-- **Dashboard unreachable:** is the "application" task running (Task Scheduler)? Run `deploy\windows\start_app.ps1` in a window to see errors.
+- **Dashboard unreachable:** start it with the desktop shortcut (the optional "application" task only exists if it was registered with `-AutoStartApplication`); a failure message names the problem in plain words and the details are in `%LOCALAPPDATA%\CovensLibrary\logs\launcher.log`.
+- **"The Windows credential store could not be read":** the application refuses to start and creates nothing. Sign in as the owner's Windows account (not another), check Windows Credentials, and contact support; never reset the Windows password through an administrator (the saved secrets and backup keys become unreadable).
 - **"Database security" error at start:** the application refuses to run on an insecure database setup; run `check_db_security` and follow `docs/DATABASE_SECURITY.md`.
 - **Emails not sent:** Reminders page → status and error; SMTP settings in the environment; "Send test email".
 - **A task did nothing after the computer slept:** "start when available" runs it at wake; the jobs task also runs every 5 minutes while you are signed in.

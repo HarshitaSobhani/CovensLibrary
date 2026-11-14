@@ -335,3 +335,57 @@ class ConnectionTests(TestCase):
                 if "GOOGLE" in n or "OAUTH" in n or "DRIVE" in n.replace("DRIVE_", "DRIVE_")
             ]
         )
+
+
+class ConnectDriveSecretHandlingTests(TestCase):
+    """Found by the security audit: the client secret used to be a required command-line argument
+    (visible in the process list and the shell history). It is now asked for, hidden."""
+
+    def setUp(self):
+        keystore.reset_memory_keystore()
+        self.addCleanup(keystore.reset_memory_keystore)
+
+    def run_command(self, *args, typed_id="typed-id", typed_secret="typed-secret"):
+        from django.core.management import call_command
+
+        creds = mock.Mock(refresh_token="refresh-1")
+        flow = mock.Mock()
+        flow.run_local_server.return_value = creds
+        with (
+            mock.patch(
+                "google_auth_oauthlib.flow.InstalledAppFlow.from_client_config", return_value=flow
+            ) as cfg,
+            mock.patch("builtins.input", return_value=typed_id) as ask_id,
+            mock.patch("getpass.getpass", return_value=typed_secret) as ask_secret,
+        ):
+            call_command("connect_drive", *args)
+        return cfg, ask_id, ask_secret
+
+    def test_with_no_arguments_both_values_are_asked_for_and_the_secret_is_hidden(self):
+        cfg, ask_id, ask_secret = self.run_command()
+        ask_id.assert_called_once()
+        ask_secret.assert_called_once()
+        installed = cfg.call_args.args[0]["installed"]
+        self.assertEqual(
+            (installed["client_id"], installed["client_secret"]), ("typed-id", "typed-secret")
+        )
+        stored = json.loads(keystore.get_keystore().get(keystore.DRIVE_CLIENT))
+        self.assertEqual(stored["client_secret"], "typed-secret")
+
+    def test_arguments_still_work_and_skip_the_prompts(self):
+        _, ask_id, ask_secret = self.run_command("--client-id", "cid", "--client-secret", "csec")
+        ask_id.assert_not_called()
+        ask_secret.assert_not_called()
+
+    def test_the_help_text_discourages_the_command_line_secret(self):
+        from backups.management.commands.connect_drive import Command
+
+        text = Command().create_parser("manage.py", "connect_drive").format_help()
+        self.assertIn("DISCOURAGED", text)
+
+    def test_empty_answers_are_refused_and_nothing_is_stored(self):
+        from django.core.management.base import CommandError
+
+        with self.assertRaises(CommandError):
+            self.run_command(typed_id="", typed_secret="")
+        self.assertIsNone(keystore.get_keystore().get(keystore.DRIVE_CLIENT))

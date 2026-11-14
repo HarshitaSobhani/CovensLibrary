@@ -60,13 +60,15 @@ class Result:
 
 # ---------------------------------------------------------------- the key
 def obtain_key(header_fingerprint, *, store=None, recovery_text=None, confirm_import=False):
-    """The working key for this backup. Order: the credential store (if its key matches), else
-    the recovery key the owner typed. Importing the recovery key into the store needs the
-    owner's explicit confirmation. Returns (key, imported)."""
+    """The key that opens this backup. Order: any key of the credential store with this fingerprint
+    (working, pending or retired), else the recovery key the owner typed. Importing a recovery key
+    needs the owner's explicit confirmation and NEVER overwrites a key that is already there: on an
+    empty store it becomes the working key; otherwise it is kept as a retired key. Returns
+    (key, imported)."""
     store = store or keystore.get_keystore()
-    stored = keystore.load_working_key(store)
-    if stored is not None and crypto.fingerprint(stored)[:16] == header_fingerprint:
-        return stored, False
+    found = keystore.find_key(header_fingerprint, store)
+    if found is not None:
+        return found, False
     if recovery_text is None:
         raise RestoreError(
             "This backup was made with a key that is not in the credential store "
@@ -85,8 +87,14 @@ def obtain_key(header_fingerprint, *, store=None, recovery_text=None, confirm_im
         raise RestoreError(
             "Restoring the key into the credential store needs the owner's confirmation."
         )
-    keystore.save_working_key(key, store)
-    if keystore.load_working_key(store) != key:
+    try:
+        if keystore.load_working_key(store) is None:
+            keystore.save_working_key(key, store)  # a replacement computer: the newest key first
+        else:
+            keystore.save_retired(key, store)
+    except keystore.KeyStoreError as exc:
+        raise RestoreError(str(exc)) from exc
+    if keystore.find_key(header_fingerprint, store) != key:
         raise RestoreError(
             "The key was saved but could not be read back from the credential store."
         )

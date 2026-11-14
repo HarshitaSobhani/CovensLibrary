@@ -375,7 +375,7 @@ class KeyRecoveryTests(RehearsalBase):
     def test_a_stored_key_of_another_backup_does_not_open_this_one(self):
         seed_library()
         _, path = self.backup()
-        keystore.save_working_key(keystore.generate_key())  # a different key is in the store
+        keystore.save_working_key(keystore.generate_key(), replace=True)  # another key is installed
         target = self.new_target()
         with self.assertRaisesRegex(restore.RestoreError, "not in the credential store"):
             self.restore_into(target, path)
@@ -772,6 +772,7 @@ class CommandTests(RehearsalBase):
         run, path = self.backup()
         keyfile = Path(self.tmp_dir) / "recovery.txt"
         keyfile.write_text(keystore.recovery_key_text(self.key))
+        keyfile.chmod(0o600)  # a key file other users can read is refused
         keystore.reset_memory_keystore()
         target = self.new_target()
         base = [

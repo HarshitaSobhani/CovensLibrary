@@ -17,6 +17,19 @@ RUNTIME_ENV = {
 OWNER_ENV = {"DB_OWNER_USER": "coven_owner", "DB_OWNER_PASSWORD": "owner-pw-456"}
 
 
+def stub_store_dir(values):
+    """A folder with a stand-in ``keyring`` module holding the given runtime secrets (the Windows
+    Credential Manager is not available here). Production reads secrets ONLY from the store."""
+    import tempfile
+
+    folder = Path(tempfile.mkdtemp(prefix="coven-keyring-"))
+    items = {f"runtime-{name}": value for name, value in values.items()}
+    (folder / "keyring.py").write_text(
+        f"VALUES = {items!r}\n\ndef get_password(service, item):\n    return VALUES.get(item)\n"
+    )
+    return folder
+
+
 def probe(module, env_extra, code):
     env = {
         "PATH": os.environ.get("PATH", ""),
@@ -24,6 +37,11 @@ def probe(module, env_extra, code):
         "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
     }
     env.update(env_extra)
+    if module == "config.settings.production":
+        # production takes its secrets from the (stand-in) Credential Manager, never the environment
+        secrets = {n: env.pop(n) for n in ("DJANGO_SECRET_KEY", "DB_PASSWORD") if n in env}
+        env["COVEN_SECRET_STORE"] = "credential-manager"
+        env["PYTHONPATH"] = f"{stub_store_dir(secrets)}{os.pathsep}{BASE}"
     return subprocess.run(
         [sys.executable, "-c", code], cwd=BASE, env=env, capture_output=True, text=True
     )

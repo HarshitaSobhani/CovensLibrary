@@ -1,4 +1,5 @@
 import getpass
+import os
 import tempfile
 from pathlib import Path
 
@@ -36,7 +37,9 @@ class Command(BaseCommand):
         parser.add_argument("--skip-safety-backup", action="store_true")
         parser.add_argument("--confirm-no-safety-backup", default="")
         parser.add_argument(
-            "--recovery-key-file", help="A file holding the recovery key (otherwise prompted)."
+            "--recovery-key-file",
+            help="DISCOURAGED: a file holding the recovery key (otherwise typed hidden). Refused "
+            "inside the application folder or when other users can read it.",
         )
         parser.add_argument(
             "--confirm", default="", help='Typed confirmation: "RESTORE <database>".'
@@ -121,17 +124,35 @@ class Command(BaseCommand):
             raise CommandError(str(exc)) from exc
         return target
 
+    def read_key_file(self, name):
+        """A recovery key in a plain file is risky (it stays on disk). It is only accepted for
+        rehearsals: never inside the application folder, never readable by other users where the
+        system can tell, and the owner is reminded to delete it. The hidden prompt is preferred."""
+        path = Path(name).resolve()
+        if Path(settings.BASE_DIR).resolve() in path.parents:
+            raise CommandError(
+                "Refused: a recovery key file must not be kept inside the application folder."
+            )
+        if os.name == "posix" and path.stat().st_mode & 0o077:
+            raise CommandError(
+                "Refused: the recovery key file is readable by other users (chmod 600 it)."
+            )
+        self.stderr.write(
+            "WARNING: a recovery key in a file stays on disk. Delete this file now; next time "
+            "type the key at the hidden prompt instead."
+        )
+        return path.read_text("utf-8")
+
     def key_inputs(self, options, header_fp):
         """(recovery text or None, confirmed). The credential store is used when its key fits."""
-        stored = keystore.load_working_key()
-        if stored is not None and crypto.fingerprint(stored)[:16] == header_fp:
+        if keystore.find_key(header_fp) is not None:
             return None, False
         self.stdout.write(
             f"This backup needs the key with fingerprint {header_fp}, "
             "which is not in the credential store."
         )
         if options["recovery_key_file"]:
-            text = Path(options["recovery_key_file"]).read_text("utf-8")
+            text = self.read_key_file(options["recovery_key_file"])
         else:
             text = getpass.getpass("Recovery key (typed characters are hidden): ")
         confirm = options["confirm_key"] or input(

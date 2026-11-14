@@ -11,13 +11,30 @@ from django.test import SimpleTestCase, TestCase
 BASE = Path(__file__).resolve().parent.parent
 
 
+def stub_store_dir(values):
+    """A folder with a stand-in ``keyring`` module holding the given runtime secrets (the Windows
+    Credential Manager is not available here). Production reads secrets ONLY from the store."""
+    import tempfile
+
+    folder = Path(tempfile.mkdtemp(prefix="coven-keyring-"))
+    items = {f"runtime-{name}": value for name, value in values.items()}
+    (folder / "keyring.py").write_text(
+        f"VALUES = {items!r}\n\ndef get_password(service, item):\n    return VALUES.get(item)\n"
+    )
+    return folder
+
+
 def run_settings_probe(env_extra, code):
-    """Import production settings in a clean subprocess with a controlled environment."""
+    """Import production settings in a clean subprocess with a controlled environment. The secrets
+    in ``env_extra`` are placed in a stand-in Credential Manager (production reads nothing else)."""
     env = {
         "PATH": os.environ.get("PATH", ""),
         "DJANGO_SETTINGS_MODULE": "config.settings.production",
     }
     env.update(env_extra)
+    secrets = {n: env.pop(n) for n in ("DJANGO_SECRET_KEY", "DB_PASSWORD") if n in env}
+    env["COVEN_SECRET_STORE"] = "credential-manager"
+    env["PYTHONPATH"] = f"{stub_store_dir(secrets)}{os.pathsep}{BASE}"
     return subprocess.run(
         [sys.executable, "-c", code], cwd=BASE, env=env, capture_output=True, text=True
     )

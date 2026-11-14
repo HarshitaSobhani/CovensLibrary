@@ -17,4 +17,6 @@ htmlcov/
 /media/
 /backup-data/  # local backup output, never committed (the application code lives in backups/)
 /staticfiles/
+/run/
+/logs/
 /import_staging/

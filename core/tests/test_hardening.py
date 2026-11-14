@@ -146,7 +146,7 @@ class ServeLocalTests(TestCase):
         out, err = io.StringIO(), io.StringIO()
         with (
             mock.patch.dict(sys.modules, {"config.wsgi": fake}),
-            mock.patch("waitress.serve") as serve,
+            mock.patch("waitress.create_server") as serve,
         ):
             with mock.patch("core.management.commands.serve_local.call_command") as jobs:
                 call_command("serve_local", *args, stdout=out, stderr=err)
@@ -166,7 +166,7 @@ class ServeLocalTests(TestCase):
     def test_other_addresses_are_refused_before_anything_starts(self):
         for host in ("0.0.0.0", "::", "::1", "localhost", "192.168.1.5", "", "127.0.0.2", "*"):
             with (
-                mock.patch("waitress.serve") as serve,
+                mock.patch("waitress.create_server") as serve,
                 self.assertRaisesRegex(CommandError, "127.0.0.1 only"),
             ):
                 call_command("serve_local", f"--host={host}")
@@ -190,7 +190,7 @@ class ServeLocalTests(TestCase):
         err = io.StringIO()
         with (
             mock.patch.dict(sys.modules, {"config.wsgi": fake}),
-            mock.patch("waitress.serve") as serve,
+            mock.patch("waitress.create_server") as serve,
         ):
             with mock.patch(
                 "core.management.commands.serve_local.call_command",
@@ -203,7 +203,18 @@ class ServeLocalTests(TestCase):
 
 
 class WindowsScriptTests(SimpleTestCase):
-    SCRIPTS = ["common", "start_app", "run_jobs", "register_tasks", "verify_runtime"]
+    SCRIPTS = [
+        "common",
+        "start_app",
+        "run_jobs",
+        "register_tasks",
+        "verify_runtime",
+        "Start-CovensLibrary",
+        "Stop-CovensLibrary",
+        "Setup-CovensLibrary",
+        "New-Shortcuts",
+        "Invoke-Manage",
+    ]
 
     def text(self, name):
         return (ROOT / "deploy/windows" / f"{name}.ps1").read_text("utf-8")
@@ -214,7 +225,9 @@ class WindowsScriptTests(SimpleTestCase):
             self.assertNotIn("0.0.0.0", text, name)
             self.assertNotRegex(text, r"--host[ =](?!\$HostName)", name)
         self.assertIn('$HostName = "127.0.0.1"', self.text("common"))
-        self.assertIn("--host $HostName", self.text("start_app"))
+        # one start-up path: the silent task script calls the launcher, which runs serve_local
+        self.assertIn("Start-CovensLibrary.ps1", self.text("start_app"))
+        self.assertIn('"--host", $HostName', self.text("Start-CovensLibrary"))
 
     def test_no_secrets_and_no_owner_credentials_are_set_by_the_scripts(self):
         for name in self.SCRIPTS:
@@ -222,10 +235,12 @@ class WindowsScriptTests(SimpleTestCase):
             self.assertNotRegex(text, r"(?i)(password|secret_key)\s*=\s*[\"'][^\"']+[\"']", name)
             self.assertNotRegex(text, r"\$env:DB_OWNER\w*\s*=", name)
         guard = self.text("common")
-        self.assertIn("DB_OWNER_PASSWORD", guard)
-        self.assertIn("must NOT be present", guard)
         self.assertIn("config.settings.production", guard)
-        self.assertIn("coven_app", guard)
+        # owner credentials are refused by the preflight the launcher and the checks run
+        preflight = (ROOT / "core" / "preflight.py").read_text("utf-8")
+        for needle in ("DB_OWNER_PASSWORD", "owner database credentials", "coven_app"):
+            self.assertIn(needle, preflight)
+        self.assertIn("core.preflight", guard)
 
     def test_the_tasks_run_as_the_signed_in_user_who_owns_the_credential_manager_key(self):
         text = self.text("register_tasks")

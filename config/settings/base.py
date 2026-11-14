@@ -15,6 +15,38 @@ def env(name, default=None, required=False):
     return value
 
 
+STORE_MODE = os.environ.get("COVEN_SECRET_STORE") == "credential-manager"
+
+
+def secret(name, default=None, required=False):
+    """A secret. Production (``COVEN_SECRET_STORE=credential-manager``): ONLY the Windows Credential
+    Manager. A plaintext environment variable of the same name is REFUSED (not used as a fallback),
+    and a store that cannot be read stops the application. Development and tests: the environment
+    (``.env`` on the developer's machine)."""
+    if STORE_MODE:
+        from config import secretstore
+
+        if os.environ.get(name):
+            raise ImproperlyConfigured(
+                f"{name} is set as an environment variable. In production secrets are read only "
+                "from the Windows Credential Manager: remove the variable."
+            )
+        try:
+            value = secretstore.get_checked(name)
+        except secretstore.SecretStoreError as exc:
+            raise ImproperlyConfigured(f"{exc}. The application will not start.") from exc
+        if not value and required:
+            raise ImproperlyConfigured(
+                f"Required secret {name} is not saved in the Windows Credential Manager "
+                "(run deploy\\windows\\store_secrets.py)."
+            )
+        return value or default
+    value = os.environ.get(name) or default
+    if required and not value:
+        raise ImproperlyConfigured(f"Required secret {name} is not set.")
+    return value
+
+
 def env_bool(name, default=False):
     value = os.environ.get(name)
     if value is None:
@@ -22,7 +54,7 @@ def env_bool(name, default=False):
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", required=True)
+SECRET_KEY = secret("DJANGO_SECRET_KEY", required=True)
 DEBUG = env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = [h.strip() for h in env("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")]
 
@@ -137,6 +169,7 @@ CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", False)
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_AGE = None  # a session cookie: not kept for the Django default of one year
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
@@ -149,7 +182,7 @@ EMAIL_PORT = int(env("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_HOST_PASSWORD = secret("EMAIL_HOST_PASSWORD", "")
 EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", "15"))
 NOTIFY_AFTER_WRITE = env_bool("NOTIFY_AFTER_WRITE", True)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "noreply@localhost")
@@ -160,3 +193,8 @@ BACKUP_KEYSTORE = env("BACKUP_KEYSTORE", "keyring")  # "memory" only in tests
 BACKUP_DESTINATION = env("BACKUP_DESTINATION", "drive")  # "drive" or "local:<folder>"
 PG_DUMP_PATH = env("PG_DUMP_PATH", "pg_dump")
 BACKUP_TMP_DIR = env("BACKUP_TMP_DIR", "")  # empty = the system temporary folder
+
+# Where the launcher keeps its process-state files and where the protected application log lives
+# (both set by the Windows launcher; the defaults suit development and tests).
+COVEN_RUN_DIR = env("COVEN_RUN_DIR", str(BASE_DIR / "run"))
+COVEN_LOG_DIR = env("COVEN_LOG_DIR", "")  # empty = log to the console only

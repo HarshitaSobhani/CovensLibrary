@@ -89,16 +89,24 @@ def encrypt_file(source, target, key, chunk_size=CHUNK_SIZE):
     return cipher_hash.hexdigest(), size, plain_hash.hexdigest()
 
 
-def read_header(path):
-    """(version, chunk_size, fingerprint hex of 16 chars, base nonce) of a backup file."""
-    with open(path, "rb") as handle:
-        raw = _read_full(handle, HEADER.size)
-    if len(raw) != HEADER.size:
+def parse_header(raw):
+    """(version, chunk_size, fingerprint hex of 16 chars, base nonce) from the first bytes of a
+    backup file. The header is authenticated later, as additional data of every chunk, so a header
+    altered to name another key makes the file undecryptable with ANY key: reading a fingerprint
+    here can therefore only make a caller more cautious, never less."""
+    if len(raw) < HEADER.size:
         raise DecryptionError("the file is too short to be a backup")
-    magic, version, chunk_size, fp, base = HEADER.unpack(raw)
+    magic, version, chunk_size, fp, base = HEADER.unpack(raw[: HEADER.size])
     if magic != MAGIC or version != VERSION or not 4096 <= chunk_size <= 64 * 1024 * 1024:
         raise DecryptionError("this is not a backup file of a supported version")
     return version, chunk_size, fp.hex(), base
+
+
+def read_header(path):
+    """The same, read from a file on disk."""
+    with open(path, "rb") as handle:
+        raw = _read_full(handle, HEADER.size)
+    return parse_header(raw)
 
 
 def decrypt_file(source, target, key):

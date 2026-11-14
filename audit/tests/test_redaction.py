@@ -177,3 +177,18 @@ class RecordTests(TestCase):
         raw = str(list(AuditEvent.objects.values())[0])
         self.assertNotIn("RAWTOKEN1234", raw)
         self.assertNotIn("ZZZZZZZZZZZZ", raw)
+
+
+class AuthorizationHeaderTests(SimpleTestCase):
+    """Found by the security audit: 'Authorization: Bearer <token>' used to leave the token."""
+
+    def test_the_whole_authorization_value_is_redacted(self):
+        for text in (
+            "Authorization: Bearer ya29.a0AfH6SMBabcdefghijklmnop",
+            "authorization=Basic dXNlcjpwYXNzd29yZA==",
+            "Authorization: Token 0123456789abcdef",
+            "header authorization: justonetoken123 end",
+        ):
+            out = scrub_text(text)
+            self.assertNotRegex(out, r"ya29|dXNlcjpw|0123456789abcdef|justonetoken")
+            self.assertIn(REDACTED, out)

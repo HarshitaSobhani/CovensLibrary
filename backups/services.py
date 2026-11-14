@@ -110,6 +110,7 @@ def run_backup(
     store=None,
     conn=None,
     using="default",
+    key=None,
 ):
     """Make one backup now. Returns the ``BackupRun`` (check ``status``); raises only BackupBusy.
     ``conn``/``using`` name the database to back up (default: the application database)."""
@@ -122,7 +123,7 @@ def run_backup(
         raise BackupBusy("another backup is already running") from exc
     try:
         destination = destination or get_destination()
-        key = load_working_key(store)
+        key = key if key is not None else load_working_key(store)
         if key is None:
             raise archive.BackupError("no backup key is set up (run setup_backup_key)")
         fp = crypto.fingerprint(key)

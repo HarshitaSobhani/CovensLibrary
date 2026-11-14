@@ -16,7 +16,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         store = keystore.get_keystore()
-        if keystore.load_working_key(store) is not None:
+        try:
+            existing = keystore.load_working_key(store)
+        except keystore.KeyStoreError as exc:
+            raise CommandError(
+                f"{exc}. A new key is NEVER created automatically while the existing one cannot "
+                "be read: fix the credential store or use the recovery key."
+            ) from exc
+        if existing is not None:
             raise CommandError(
                 "A backup key already exists. It is never replaced automatically (older backups "
                 "need it). Use show_recovery_key to see its recovery key again."

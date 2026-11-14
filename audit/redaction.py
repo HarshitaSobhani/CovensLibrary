@@ -85,6 +85,9 @@ _KEY_VALUE = re.compile(
     r"(?i)\b(password|passwd|pwd|passphrase|secret|api[_-]?key|token|authorization|otp)\b"
     r"(\s*[:=]\s*)(\S+)"
 )
+# "Authorization: Bearer <token>": the value is TWO words, so the generic key=value rule alone
+# would hide "Bearer" and leave the token itself in the text.
+_AUTH_HEADER = re.compile(r"(?i)\b(authorization)(\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?\S+")
 _BEARER = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}")
 _RESET_URL = re.compile(r"(/reset/)[^/\s]+/[^/\s]+/?")
@@ -104,6 +107,7 @@ def scrub_text(text):
     """Redact credential-shaped content inside a string, keeping the rest."""
     if not text:
         return text
+    text = _AUTH_HEADER.sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}", text)
     text = _KEY_VALUE.sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}", text)
     text = _BEARER.sub(lambda m: f"{m.group(1)} {REDACTED}", text)
     text = _JWT.sub(REDACTED, text)

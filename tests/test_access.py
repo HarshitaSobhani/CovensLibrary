@@ -11,6 +11,7 @@ PUBLIC_URL_NAMES = {
     "accounts:password_reset_complete",
     "accounts:recover",
     "accounts:logout",
+    "core:healthz",  # the launcher's health probe: loopback only, answers only "ok"
 }
 
 

@@ -3,6 +3,7 @@ rehearsals; ``DriveDestination`` talks to Google Drive with the ``drive.file`` s
 application created itself (decision D-29a). Both can verify what was stored, not just that an
 upload returned."""
 
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -97,6 +98,17 @@ class RemoteFile:
     name: str = ""
 
 
+@dataclass
+class RemoteEntry:
+    """One item found while enumerating a destination (a backup or something unexpected)."""
+
+    name: str
+    remote_id: str
+    is_folder: bool = False
+    trashed: bool = False
+    size: int | None = None
+
+
 class LocalDirectoryDestination:
     kind = "local"
 
@@ -137,6 +149,42 @@ class LocalDirectoryDestination:
 
     def list(self):
         return sorted(p.name for p in self.root.glob("*.cbk")) if self.root.is_dir() else []
+
+    def enumerate_files(self):
+        """EVERY entry of the backup folder, or DestinationError. Never 'empty because it could not
+        look': a missing folder, a permission problem or a read error is an error."""
+        try:
+            if not self.root.is_dir():
+                raise DestinationError("the backup folder does not exist or is not a folder")
+            entries = []
+            with os.scandir(self.root) as scan:
+                for item in scan:
+                    is_folder = item.is_dir(follow_symlinks=False)
+                    entries.append(
+                        RemoteEntry(
+                            item.name,
+                            item.name,
+                            is_folder=is_folder,
+                            size=None if is_folder else item.stat(follow_symlinks=False).st_size,
+                        )
+                    )
+        except DestinationError:
+            raise
+        except OSError as exc:
+            raise DestinationError(
+                f"the backup folder could not be read ({type(exc).__name__})"
+            ) from exc
+        return sorted(entries, key=lambda e: e.name)
+
+    def read_head(self, entry, count):
+        """The first ``count`` bytes of a file, or DestinationError."""
+        try:
+            with open(self.root / entry.remote_id, "rb") as handle:
+                return handle.read(count)
+        except OSError as exc:
+            raise DestinationError(
+                f"{entry.name} could not be read ({type(exc).__name__})"
+            ) from exc
 
 
 class DriveDestination:
@@ -243,6 +291,74 @@ class DriveDestination:
         except Exception:  # noqa: BLE001
             return "(Cleaning up the partial upload also failed; it may remain in the folder.)"
         return ""
+
+    def known_folder(self):
+        """The backup folder's id WITHOUT creating anything, or None when it is not known."""
+        from core.models import LibrarySetting
+
+        return self._folder_id or LibrarySetting.load().drive_folder_id or None
+
+    def enumerate_files(self):
+        """EVERY item of the backup folder (trashed ones too: a trashed backup is still
+        restorable), following every page. An incomplete listing is an error, never a result."""
+        folder = self.known_folder()
+        if not folder:
+            raise DestinationError("the Drive backup folder is not known; it cannot be listed")
+        entries, token, seen, pages = [], None, set(), 0
+        while True:
+            pages += 1
+            if pages > 500:
+                raise DestinationError("the Drive listing has too many pages to be trusted")
+            try:
+                reply = (
+                    self.service()
+                    .files()
+                    .list(
+                        q=f"'{folder}' in parents",
+                        fields="nextPageToken, incompleteSearch, "
+                        "files(id, name, size, mimeType, trashed)",
+                        pageSize=1000,
+                        pageToken=token,
+                        spaces="drive",
+                    )
+                    .execute()
+                )
+            except DestinationError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                raise classify_drive_error(exc, "listing") from exc
+            if reply.get("incompleteSearch"):
+                raise DestinationError("Google Drive reported an incomplete listing")
+            for item in reply.get("files", []):
+                entries.append(
+                    RemoteEntry(
+                        item.get("name", ""),
+                        item["id"],
+                        is_folder=item.get("mimeType") == "application/vnd.google-apps.folder",
+                        trashed=bool(item.get("trashed")),
+                        size=int(item["size"]) if item.get("size") is not None else None,
+                    )
+                )
+            token = reply.get("nextPageToken")
+            if not token:
+                return sorted(entries, key=lambda e: (e.name, e.remote_id))
+            if token in seen:
+                raise DestinationError("the Drive listing did not advance; it cannot be trusted")
+            seen.add(token)
+
+    def read_head(self, entry, count):
+        """The first ``count`` bytes of a file (a ranged download), or DestinationError."""
+        try:
+            request = self.service().files().get_media(fileId=entry.remote_id)
+            request.headers["Range"] = f"bytes=0-{count - 1}"
+            data = request.execute()
+        except DestinationError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise classify_drive_error(exc, "download") from exc
+        if not isinstance(data, (bytes, bytearray)):
+            raise DestinationError(f"{entry.name} could not be read")
+        return bytes(data[:count])
 
     def verify(self, remote_id, size, sha256):
         """Compare the size and the SHA-256 (or MD5 when Drive offers no SHA-256) that Drive
