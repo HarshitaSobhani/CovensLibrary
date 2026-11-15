@@ -2,6 +2,7 @@
 Django process's database password). Complements test_runtime_privileges: server-side file and
 program access, server settings, other sessions, lock-based denial, and what the role can read."""
 
+import psycopg
 from django.db import connection
 from django.test import TransactionTestCase
 from psycopg import errors
@@ -56,14 +57,31 @@ class RuntimeRoleAttackTests(TransactionTestCase):
             self.assertDenied(sql)
 
     def test_the_role_cannot_stop_other_sessions_or_hold_exclusive_locks(self):
-        other = connection.cursor()
-        other.execute("SELECT pg_backend_pid()")
-        pid = other.fetchone()[0]
+        # Safety guard: a superuser CAN terminate backends, so running this as one would kill
+        # sessions for real. Refuse to run the destructive probe in that configuration.
+        if self.run_rt("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")[0][0]:
+            self.skipTest("The runtime role is a superuser (single-role dev); probe not run.")
+        # The victim is a dedicated throwaway session, never the test's own Django connection.
+        s = connection.settings_dict
+        victim = psycopg.connect(
+            host=s["HOST"],
+            port=s["PORT"],
+            dbname=s["NAME"],
+            user=s["USER"],
+            password=s["PASSWORD"],
+            autocommit=True,
+        )
+        self.addCleanup(victim.close)
+        pid = victim.info.backend_pid
+        connection.ensure_connection()
+        self.assertNotEqual(pid, connection.connection.info.backend_pid)
+        self.assertNotEqual(pid, self.rt.info.backend_pid)
         for sql in (
             f"SELECT pg_terminate_backend({pid})",
             f"SELECT pg_cancel_backend({pid})",
         ):
             self.assertDenied(sql)
+        self.assertEqual(victim.execute("SELECT 1").fetchone(), (1,))  # still alive
         # a table lock stronger than a read would block the whole application: refused
         with self.rt.cursor() as cur:
             cur.execute("BEGIN")

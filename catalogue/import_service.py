@@ -126,6 +126,14 @@ def _text(value):
     return str(value).replace("\x00", "").strip()
 
 
+_COLUMN_LOOKUP = {" ".join(c.lower().split()): c for c in COLUMNS}
+
+
+def _canonical_column(name):
+    """Match headers ignoring case and repeated whitespace; unknown headers pass through."""
+    return _COLUMN_LOOKUP.get(" ".join(name.lower().split()), name)
+
+
 def read_workbook(upload):
     """Validate the upload and return (sha256, rows) where rows = [(row_number, {column: text})].
 
@@ -159,7 +167,7 @@ def read_workbook(upload):
         header = next(iterator, None)
         if not header:
             raise RuleViolation("header_missing", "The Books sheet is empty.")
-        names = [_text(h) for h in header]
+        names = [_canonical_column(_text(h)) for h in header]
         missing = [c for c in REQUIRED_COLUMNS if c not in names]
         if missing:
             raise RuleViolation(
@@ -171,7 +179,11 @@ def read_workbook(upload):
                 raise RuleViolation(
                     "too_many_rows", f"The sheet has more than {MAX_SCAN_ROWS} rows."
                 )
-            record_ = {n: _text(v) for n, v in zip(names, values, strict=False) if n}
+            record_ = {}
+            for n, v in zip(names, values, strict=False):
+                if n:
+                    # A repeated header never blanks a filled one: first non-empty cell wins.
+                    record_[n] = record_.get(n) or _text(v)
             if not any(record_.values()):
                 continue
             rows.append((scanned, record_))

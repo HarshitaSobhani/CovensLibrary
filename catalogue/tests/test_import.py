@@ -368,3 +368,131 @@ class ImportViewTests(ImportBase):
         r = self.client.get(reverse("catalogue:import_template"))
         self.assertEqual(r.status_code, 200)
         self.assertIn("spreadsheetml", r["Content-Type"])
+
+
+class HeaderNormalisationTests(ImportBase):
+    def test_duplicate_category_header_keeps_filled_value(self):
+        header = [*svc.COLUMNS, "Category"]  # second, empty Category column
+        batch = self.stage([[*row(), ""]], header=header)
+        self.assertTrue(batch.rows.get().is_valid)
+
+    def test_headers_match_ignoring_case_and_spacing(self):
+        header = [c.upper() + " " for c in svc.COLUMNS]
+        batch = self.stage([row()], header=header)
+        self.assertTrue(batch.rows.get().is_valid)
+
+    def test_blank_legacy_ids_valid_in_generate_mode(self):
+        batch = self.stage([row(copies=3)])
+        r = batch.rows.get()
+        self.assertTrue(r.is_valid)
+        self.assertEqual(r.errors, [])
+
+
+class ModeAndCategoryRegressionTests(ImportBase):
+    def codes(self):
+        return sorted(BookCopy.objects.values_list("copy_code", flat=True))
+
+    def test_generate_mode_multiple_copies_unique_ids(self):
+        batch = self.stage([row("A", copies=3), row("B", copies=2)])
+        self.options(batch)
+        svc.execute_import(batch, actor=self.owner)
+        codes = self.codes()
+        self.assertEqual(len(codes), 5)
+        self.assertEqual(len(set(codes)), 5)
+
+    def test_supplied_mode_missing_and_wrong_count_rejected(self):
+        batch = self.stage([row("A", copies=2), row("B", copies=2, ids="X1")])
+        rows = self.options(batch, copy_id_mode="supplied")
+        for r in rows:
+            self.assertFalse(r.is_valid)
+            self.assertEqual(r.errors[0]["code"], "ids_count")
+
+    def test_supplied_mode_exact_ids_and_duplicates(self):
+        batch = self.stage([row("A", copies=2, ids="X1,X2"), row("B", copies=2, ids="X3,X3")])
+        rows = self.options(batch, copy_id_mode="supplied")
+        self.assertEqual([r.is_valid for r in rows], [True, False])
+        self.assertIn("ids_duplicate", [e["code"] for e in rows[1].errors])
+
+    def test_switching_modes_revalidates_both_ways(self):
+        batch = self.stage([row("A", copies=2)])
+        self.assertTrue(batch.rows.get().is_valid)
+        self.assertFalse(self.options(batch, copy_id_mode="supplied")[0].is_valid)
+        batch.refresh_from_db()
+        self.assertEqual(batch.copy_id_mode, "supplied")
+        self.assertTrue(self.options(batch, copy_id_mode="generate")[0].is_valid)
+        batch.refresh_from_db()
+        self.assertEqual(batch.copy_id_mode, "generate")
+
+    def test_invalid_mode_fails_explicitly(self):
+        batch = self.stage([row("A")])
+        for bad in ("", None, "auto"):
+            with self.assertRaises(RuleViolation) as ctx:
+                self.options(batch, copy_id_mode=bad)
+            self.assertEqual(ctx.exception.code, "mode_invalid")
+
+    def test_blank_category_error_even_when_creating_missing(self):
+        batch = self.stage([row("A", category="")])
+        r = self.options(batch, create_missing_categories=True)[0]
+        self.assertEqual([e["code"] for e in r.errors], ["category_required"])
+
+    def test_failed_rows_create_no_categories(self):
+        batch = self.stage([row("Good", category="New"), row("Bad", category="Ghost", isbn="1")])
+        self.options(batch, create_missing_categories=True)
+        svc.execute_import(batch, actor=self.owner, accept_excluded=True)
+        self.assertTrue(Category.objects.filter(name="New").exists())
+        self.assertFalse(Category.objects.filter(name="Ghost").exists())
+
+    def test_view_persists_mode_on_update_preview(self):
+        self.client.force_login(self.owner)
+        batch = self.stage([row("A", copies=2)])
+        url = reverse("catalogue:import_preview", args=[batch.pk])
+        self.client.post(url, {"copy_id_mode": "supplied", "refresh": "1"})
+        batch.refresh_from_db()
+        self.assertEqual(batch.copy_id_mode, "supplied")
+        page = self.client.get(url)
+        self.assertContains(page, "0 valid")
+        self.assertContains(
+            page,
+            'value="supplied" class="form-check-input" id="id_copy_id_mode_1" required checked',
+        )
+
+
+class BlankCategoryWorkbookShapeTests(ImportBase):
+    """Shape of a real owner workbook: 16 headers, blank Category/Legacy IDs/Copies."""
+
+    def make(self, n=208):
+        rows = [row(f"Book {i}", category="", copies="") for i in range(n)]
+        return upload(workbook(rows))
+
+    def preview_url(self, batch):
+        return reverse("catalogue:import_preview", args=[batch.pk])
+
+    def test_blank_categories_reported_accurately_and_ids_not_required(self):
+        self.client.force_login(self.owner)
+        self.client.post(reverse("catalogue:import_start"), {"file": self.make()})
+        batch = ImportBatch.objects.get()
+        self.assertEqual(batch.copy_id_mode, "generate")  # initial mode is generate
+        codes = {e["code"] for r in batch.rows.all() for e in r.errors}
+        self.assertEqual(codes, {"category_required"})  # no copy-ID errors in generate mode
+        page = self.client.get(self.preview_url(batch))
+        self.assertContains(page, "208 with errors")
+        self.assertContains(page, "0 valid")
+
+    def test_generate_mode_survives_update_and_reload(self):
+        self.client.force_login(self.owner)
+        self.client.post(reverse("catalogue:import_start"), {"file": self.make(3)})
+        batch = ImportBatch.objects.get()
+        url = self.preview_url(batch)
+        self.client.post(url, {"copy_id_mode": "supplied", "refresh": "1"})
+        batch.refresh_from_db()
+        self.assertEqual(batch.copy_id_mode, "supplied")
+        codes = {e["code"] for r in batch.rows.all() for e in r.errors}
+        self.assertIn("ids_count", codes)  # supplied mode: blank IDs rejected
+        self.client.post(url, {"copy_id_mode": "generate", "refresh": "1"})
+        batch.refresh_from_db()
+        self.assertEqual(batch.copy_id_mode, "generate")
+        codes = {e["code"] for r in batch.rows.all() for e in r.errors}
+        self.assertEqual(codes, {"category_required"})
+        html = self.client.get(url).content.decode()
+        self.assertRegex(html, r'value="generate"[^>]*\schecked')
+        self.assertNotRegex(html, r'value="supplied"[^>]*\schecked')

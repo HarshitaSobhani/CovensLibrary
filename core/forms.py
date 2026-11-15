@@ -1,5 +1,7 @@
 from django import forms
 
+CHECK_WIDGETS = (forms.CheckboxInput, forms.RadioSelect, forms.CheckboxSelectMultiple)
+
 
 class BootstrapFormMixin:
     """Adds Bootstrap classes to widgets so forms look consistent."""
@@ -7,7 +9,7 @@ class BootstrapFormMixin:
     def _style_widgets(self):
         for field in self.fields.values():
             w = field.widget
-            if isinstance(w, forms.CheckboxInput):
+            if isinstance(w, CHECK_WIDGETS):
                 w.attrs.setdefault("class", "form-check-input")
             elif isinstance(w, (forms.Select, forms.SelectMultiple)):
                 w.attrs.setdefault("class", "form-select")

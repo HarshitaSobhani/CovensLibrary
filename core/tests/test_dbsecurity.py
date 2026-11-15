@@ -14,6 +14,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from core import dbsecurity as dbs
 from core.apps import apply_grants_after_migrate
 from core.checks import database_security
+from core.tests.secret_checks import checked_secret
 
 RUNTIME = settings.DB_RUNTIME_ROLE
 
@@ -91,7 +92,7 @@ class BaselineTests(TestCase):
         call_command("check_db_security", stdout=out)
         text = out.getvalue()
         self.assertIn("0 error(s)", text)
-        self.assertNotIn(settings.DATABASES["default"]["PASSWORD"], text)
+        self.assertNotIn(checked_secret(self, settings.DATABASES["default"]["PASSWORD"]), text)
 
     def test_json_output(self):
         out = StringIO()
@@ -116,7 +117,7 @@ class GrantPlanTests(SimpleTestCase):
         self.assertIn('GRANT SELECT, INSERT ON TABLE "public"."audit_auditevent"', text)
         self.assertIn('GRANT SELECT, INSERT, UPDATE ON TABLE "public"."members_member"', text)
         self.assertNotIn('DELETE ON TABLE "public"."members_member"', text)
-        self.assertNotIn(settings.DATABASES["default"]["PASSWORD"], text)
+        self.assertNotIn(checked_secret(self, settings.DATABASES["default"]["PASSWORD"]), text)
 
     def test_plan_is_deterministic(self):
         a = dbs.render(connection, dbs.plan_grants(connection, RUNTIME))
@@ -255,7 +256,9 @@ class ModeTests(TestCase):
             with self.assertRaises(ImproperlyConfigured) as ctx:
                 dbs.assert_runtime_security()
         self.assertIn("coven.E00", str(ctx.exception))
-        self.assertNotIn(settings.DATABASES["default"]["PASSWORD"], str(ctx.exception))
+        self.assertNotIn(
+            checked_secret(self, settings.DATABASES["default"]["PASSWORD"]), str(ctx.exception)
+        )
 
     def test_startup_guard_is_skipped_for_owner_role_and_dev_mode(self):
         dbs.assert_runtime_security()  # DB_ROLE == owner under the test settings

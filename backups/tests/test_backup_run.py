@@ -13,6 +13,7 @@ from django.test import TestCase, override_settings
 from audit.models import AuditEvent
 from backups import crypto, keystore, services
 from backups.models import BackupRun
+from core.tests.secret_checks import checked_secret
 
 from .helpers import FakeDestination, TempDirMixin, fresh_key, ist
 
@@ -92,7 +93,9 @@ class SuccessfulRunTests(TempDirMixin, TestCase):
 
     def test_nothing_secret_is_stored_or_logged(self):
         run = self.run_backup()
-        password = settings.DATABASES["default"].get("PASSWORD") or "x-no-password-set"
+        password = checked_secret(
+            self, settings.DATABASES["default"].get("PASSWORD") or "x-no-password-set"
+        )
         blobs = [json.dumps(run.manifest), run.error_summary, run.file_name, run.sha256]
         blobs += [json.dumps(e.summary) for e in AuditEvent.objects.all()]
         stored = (Path(self.dest_dir) / run.file_name).read_bytes()

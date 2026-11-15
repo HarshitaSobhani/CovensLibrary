@@ -3,6 +3,11 @@
 <div class="mb-3">
   {% if field.field.widget.input_type == 'checkbox' %}
     <div class="form-check">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div>
+  {% elif field.field.widget.input_type == 'radio' %}
+    <div class="form-label" id="{{ field.auto_id }}_label">{{ field.label }}</div>
+    {% for radio in field %}
+      <div class="form-check">{{ radio.tag }} <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>
+    {% endfor %}
   {% else %}
     <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
   {% endif %}
