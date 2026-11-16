@@ -65,9 +65,9 @@ Also confirmed: split cash/UPI payments settle one obligation (full amount remai
 | B22 | Subscription dates determine subscription eligibility; owner-managed status (active/suspended/archived) can suspend/archive independently. |
 | B23 | Reactivation: owner chooses restore previous arrangement or require a new subscription. |
 | B24 | Editions and physical copies tracked separately; dashboard shows both counts. |
-| B25 | Per import, owner chooses: create missing categories, or reject affected rows. |
+| B25 | Per import, owner chooses: create missing categories, or reject affected rows. Applies only to a non-empty category that does not yet exist; a blank category is allowed (D-30). |
 | B26 | Per import, owner chooses: supplied/legacy copy IDs, or generate; conflicts and duplicate copy IDs prevented. |
-| B27 | Author may be blank or explicit "Unknown author". |
+| B27 | **Superseded by D-30.** (Was: author may be blank or explicit "Unknown author".) Author is now mandatory; "Unknown author" is never substituted. |
 | B28 | Duplicate ISBN → warning; owner decides continue/cancel; no auto-merge. |
 | B29 | Code 128 barcodes from copy IDs; configurable label dimensions/layout; printable sheets. |
 | B31 | International numbers, country-code selection, E.164, mandatory and unique. |
@@ -274,3 +274,32 @@ These are implementation choices made in the 14 November 2026 security pass that
 - **S-04 decided and implemented:** safe key rotation (`docs/KEY_ROTATION_AND_RECOVERY.md`); not yet rehearsed on the Dell.
 - **S-05 decided and implemented:** BitLocker is mandatory; verified by an administrator-only `Verify-BitLocker-Admin.ps1` (ProgramData record), then required by the owner's non-elevated `Setup-CovensLibrary.ps1`, which also needs her typed YES that the recovery key is off the computer; Windows-unverified.
 - **S-06 decided:** automatic application start stays disabled by default (desktop shortcut).
+
+## Import field requirements (owner decision D-30)
+
+| ID | Decision |
+|---|---|
+| D-30a | **Exactly two catalogue fields are mandatory to import or create a book: Title and Author.** Both must be non-empty after trimming whitespace. A blank or whitespace-only Title or Author rejects the row with a field-specific error (`title_required`, `author_required`). |
+| D-30b | **Every other metadata field is optional:** Category, ISBN, Publisher, Edition, Publication Year, Description, Acquisition details, Notes. A blank Category is never an error and never replaced by a default or invented category. "Unknown author" is never substituted; a user-typed "Unknown author" is kept verbatim. Non-empty malformed values (ISBN, year, dates, cost, copies, IDs) are still rejected. |
+| D-30c | **Category setting unchanged for non-empty values.** A non-empty category that does not exist is rejected unless "create missing categories" is chosen (B25). |
+| D-30d | **Copies.** Blank Copies keeps the existing default of 1; maximum 100. Generate mode never requires legacy IDs; supplied mode keeps its validation (one valid, unique ID per copy). |
+| D-30e | **Incomplete records stay editable.** The catalogue shows which optional fields are missing (detail page, list column, "Incomplete only" filter) and the import preview counts missing optional details. An existing edition that already has no author stays editable; a new edition always needs one. |
+| D-30f | *Implementation note:* `catalogue_bookedition.category_id` became nullable (migration `catalogue.0006`); reports show "No category" for such books. No other business rule changed. |
+
+## Engineering audit, November 2026 — owner decisions O-01 to O-05 (decided)
+
+| ID | Decision |
+|---|---|
+| O-01 | **Copy limits stay separate:** 200 per manual Add Copies action, 100 per Excel import row. Neither changes. |
+| O-02 | **Confirm never imports a preview the owner has not reviewed.** If an import option, the staged rows, a catalogue dependency or the validation state differs from the preview that was displayed, the preview is regenerated and shown, nothing is imported in that request, and a separate explicit confirmation is required. Implemented with a preview token (`preview_state`: options plus every row's validity, cleaned values, errors and warnings). The acknowledgement tick-boxes are confirmations, not preview changes. |
+| O-03 | `CLAUDE.md` status rewritten into committed / uncommitted / outstanding. |
+| O-04 | **Title and Author are mandatory wherever a NEW edition is created** (manual Add Edition and Excel import), non-whitespace, never substituted. Existing editions with historical incomplete metadata stay editable. |
+| O-05 | **"Title" and "Book Title" are both accepted as the title heading**, case-insensitively. A sheet in which two columns map to the same field (for example both headings, or a repeated "Category") is rejected with an error naming the columns; nothing is guessed. |
+
+## Engineering audit, second pass — owner decisions O-06 to O-08 (decided, implemented)
+
+| ID | Decision and implementation |
+|---|---|
+| O-06 | A subscription cannot be cancelled while a book is out for the member (`loan_outstanding`), checked under the member lock. Loans, due dates, payment history and audit records are untouched; no refund or financial adjustment is created. Cancellation is allowed once the book is returned. |
+| O-07 | A token collection cannot be reversed while the member has an outstanding loan (`loans_outstanding`), the same rule as a token refund. The restriction is in `finance.corrections.reverse_transaction`, inside the transaction after the member lock. A token reversal is still distinct from a token refund. |
+| O-08 | Every signed-in page has its own document title (`Page - Coven's Library`) and exactly one h1, visually hidden in the top bar. No visible page name is restored to the top bar. Signed-out pages keep their visible top-bar title. |

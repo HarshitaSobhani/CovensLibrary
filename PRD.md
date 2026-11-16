@@ -82,7 +82,7 @@ Fields: permanent member ID (format `COV-M-000001`), full name, mobile (E.164, m
 
 ### 6.3 Book catalogue and inventory
 Editions and physical copies are separate entities; the dashboard reports both. Each edition is its own record.
-- **Edition:** title (required); author (may be blank or explicitly "Unknown author"); ISBN (optional; duplicates produce a warning, not a block); publisher; edition information; publication year; one category; description; notes; archived flag.
+- **Edition:** title and author (the only two mandatory fields; both must be non-empty after trimming; "Unknown author" is never substituted); ISBN (optional; duplicates produce a warning, not a block); publisher; edition information; publication year; one optional category; description; notes (all optional, so incomplete records can be completed later); archived flag.
 - **Copy:** unique copy ID in the format `COV-C-000001` (generated, or a supplied legacy ID chosen per import); Code 128 barcode whose value is the copy ID; edition; **condition** (Good, Poor, Damaged, Lost) and **circulation status** (Available, Borrowed, Damaged, Lost, Withdrawn) as separate fields; a Poor-condition copy always has status Withdrawn; acquisition source (purchased/donated), donor, date, cost where applicable; shelf location; notes.
 - A copy is issuable only if condition is Good and status is Available. Poor, Damaged, Lost, Withdrawn and Borrowed copies are not issuable. Copy-level history (acquisition, issue, return, condition and status changes) is kept. Books or copies with history are never hard-deleted.
 - **Barcode labels:** Code 128 printable label sheets; the owner configures label dimensions and page layout. No fixed printer or label stock.
@@ -219,7 +219,7 @@ Demonstrated by automated tests and/or documented manual verification:
 19. Automatic emails follow the schedule in §6.10 (09:00 Asia/Kolkata reminders; retries 5 min after the initial failure, 30 min after retry 1, 2 h after retry 2, then marked failed with error kept), never duplicate, record skipped members with a reason, and record Prepared/SMTP accepted/SMTP failed/Skipped; WhatsApp is never sent automatically.
 20. Dashboard shows the default sections (no Pending Payments) with configurable visibility and attention criteria.
 21. Reports support the date filters; allocation keeps full precision; ZIP export contains CSV, Excel and manifest.
-22. Excel import validates and previews, honours per-import category and copy-ID choices, warns on duplicate ISBNs.
+22. Excel import requires only Title and Author, validates and previews (listing missing optional details), honours per-import category (for non-empty unknown categories) and copy-ID choices, warns on duplicate ISBNs.
 23. Daily encrypted backups run, health is visible, 26-hour warning works; retention 30 + 12.
 24. A restore, including key restoration into Windows Credential Manager, is verified on a clean machine.
 25. The application works in the Dell browser on localhost.

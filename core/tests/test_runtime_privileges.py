@@ -372,11 +372,11 @@ out["phase5a"] = [
 ]
 m = ms.create_member(actor=owner, full_name="Runtime", national_number="9811100001", region="IN")
 cat = Category.objects.create(name="Fiction")
-e = cs.create_edition(actor=owner, title="T", category=cat)
+e = cs.create_edition(author="Test Author", actor=owner, title="T", category=cat)
 copies = cs.add_copies(e, 2, actor=owner, source="purchased")
 cs.set_copy_state(copies[0], condition="poor", status="withdrawn", actor=owner)
 wb = Workbook(); ws = wb.active; ws.title = "Books"; ws.append(svc.COLUMNS)
-row = dict.fromkeys(svc.COLUMNS, ""); row.update({"Title": "Imp", "Category": "Fiction", "Copies": 2})
+row = dict.fromkeys(svc.COLUMNS, ""); row.update({"Title": "Imp", "Author": "Imp Author", "Category": "Fiction", "Copies": 2})
 ws.append([row[k] for k in svc.COLUMNS]); b = io.BytesIO(); wb.save(b)
 batch = svc.stage_import(SimpleUploadedFile("b.xlsx", b.getvalue()), actor=owner)
 svc.set_options(batch, create_missing_categories=False, copy_id_mode="generate", isbn_warnings_acknowledged=True)

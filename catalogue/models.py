@@ -24,11 +24,14 @@ class BookEdition(models.Model):
     """One bibliographic edition. Each edition is its own record; copies hang off it."""
 
     title = models.CharField(max_length=300)
-    author = models.CharField(max_length=200, blank=True)  # blank or "Unknown author" are valid
+    # Required when a book is created or imported; legacy records may still hold a blank author.
+    author = models.CharField(max_length=200, blank=True)
     publisher = models.CharField(max_length=200, blank=True)
     edition_label = models.CharField(max_length=100, blank=True)
     publication_year = models.PositiveSmallIntegerField(null=True, blank=True)
-    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="editions")
+    category = models.ForeignKey(
+        Category, on_delete=models.PROTECT, related_name="editions", null=True, blank=True
+    )  # optional: incomplete records stay editable
     isbn = models.CharField(max_length=13, blank=True, db_index=False)
     description = models.TextField(blank=True)
     notes = models.TextField(blank=True)
@@ -45,6 +48,20 @@ class BookEdition(models.Model):
 
     def __str__(self):
         return self.title
+
+    @property
+    def missing_metadata(self):
+        """Optional catalogue fields still empty, so the owner can complete them later."""
+        checks = (
+            ("Category", self.category_id is not None),
+            ("ISBN", bool(self.isbn)),
+            ("Publisher", bool(self.publisher)),
+            ("Edition", bool(self.edition_label)),
+            ("Publication year", self.publication_year is not None),
+            ("Description", bool(self.description.strip())),
+            ("Notes", bool(self.notes.strip())),
+        )
+        return [name for name, present in checks if not present]
 
     def delete(self, *args, **kwargs):
         raise RuleViolation("edition_delete_blocked", "Editions are archived, never deleted.")

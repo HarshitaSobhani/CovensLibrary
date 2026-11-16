@@ -34,7 +34,7 @@ def workbook(rows, header=None):
 
 def row(**kw):
     data = dict.fromkeys(svc.COLUMNS, "")
-    data.update({"Title": "Book", "Category": "Fiction"})
+    data.update({"Title": "Book", "Author": "Test Author", "Category": "Fiction"})
     data.update(kw)
     return [data[c] for c in svc.COLUMNS]
 
@@ -184,7 +184,9 @@ class CopyIdRuleTests(Base):
         self.assertEqual(rows[1].errors[0]["code"], "id_reserved")
 
     def test_service_also_refuses_reserved_codes(self):
-        e = services.create_edition(actor=self.owner, title="X", category=self.cat)
+        e = services.create_edition(
+            author="Test Author", actor=self.owner, title="X", category=self.cat
+        )
         with self.assertRaises(RuleViolation) as ctx:
             services.add_copies(e, 1, actor=self.owner, source="purchased", codes=["COV-C-000123"])
         self.assertEqual(ctx.exception.code, "code_reserved")
@@ -375,9 +377,9 @@ class CellSafetyTests(Base):
         wb = Workbook()
         ws = wb.active
         ws.title = "Books"
-        ws.append(["Title", "Category"])
-        ws.append(["=1+1", "Fiction"])
-        ws.append(["Real", "Fiction"])
+        ws.append(["Title", "Author", "Category"])
+        ws.append(["=1+1", "Someone", "Fiction"])
+        ws.append(["Real", "Someone", "Fiction"])
         buf = io.BytesIO()
         wb.save(buf)
         batch = svc.stage_import(SimpleUploadedFile("b.xlsx", buf.getvalue()), actor=self.owner)
@@ -388,10 +390,16 @@ class CellSafetyTests(Base):
 
 class IsbnVariantTests(Base):
     def test_isbn10_and_isbn13_of_the_same_book_are_duplicates(self):
-        services.create_edition(actor=self.owner, title="A", category=self.cat, isbn="0306406152")
+        services.create_edition(
+            author="Test Author", actor=self.owner, title="A", category=self.cat, isbn="0306406152"
+        )
         self.assertTrue(services.find_isbn_duplicates("9780306406157").exists())
         e = services.create_edition(
-            actor=self.owner, title="B", category=self.cat, isbn="9780261102217"
+            author="Test Author",
+            actor=self.owner,
+            title="B",
+            category=self.cat,
+            isbn="9780261102217",
         )
         self.assertTrue(services.find_isbn_duplicates("0261102214").exists())
         self.assertFalse(services.find_isbn_duplicates("0261102214", exclude_pk=e.pk).exists())
@@ -459,7 +467,9 @@ class LabelDefaultTests(Base):
 class QueryParameterTests(Base):
     def test_bad_filters_give_controlled_responses(self):
         self.client.force_login(self.owner)
-        e = services.create_edition(actor=self.owner, title="T", category=self.cat)
+        e = services.create_edition(
+            author="Test Author", actor=self.owner, title="T", category=self.cat
+        )
         services.add_copies(e, 1, actor=self.owner, source="purchased")
         for params in [
             "category=abc",
@@ -484,7 +494,9 @@ class QueryParameterTests(Base):
 
     def test_invalid_category_filter_warns_and_is_ignored(self):
         self.client.force_login(self.owner)
-        services.create_edition(actor=self.owner, title="Visible", category=self.cat)
+        services.create_edition(
+            author="Test Author", actor=self.owner, title="Visible", category=self.cat
+        )
         r = self.client.get("/books/?category=abc")
         self.assertContains(r, "Visible")
         self.assertContains(r, "not valid")
@@ -494,8 +506,12 @@ class PaginationEncodingTests(Base):
     def test_search_with_ampersand_survives_pagination(self):
         self.client.force_login(self.owner)
         for i in range(30):
-            services.create_edition(actor=self.owner, title=f"Jerry & Tom {i}", category=self.cat)
-        services.create_edition(actor=self.owner, title="Jerry alone", category=self.cat)
+            services.create_edition(
+                author="Test Author", actor=self.owner, title=f"Jerry & Tom {i}", category=self.cat
+            )
+        services.create_edition(
+            author="Test Author", actor=self.owner, title="Jerry alone", category=self.cat
+        )
         first = self.client.get("/books/", {"q": "Jerry & Tom"})
         self.assertContains(first, "q=Jerry+%26+Tom&amp;page=2")
         second = self.client.get("/books/", {"q": "Jerry & Tom", "page": 2})

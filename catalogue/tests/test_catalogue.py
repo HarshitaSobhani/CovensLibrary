@@ -19,6 +19,7 @@ class Base(TestCase):
         self.cat = Category.objects.create(name="Fiction")
 
     def edition(self, title="The Hobbit", **kw):
+        kw.setdefault("author", "Test Author")
         return services.create_edition(actor=self.owner, title=title, category=self.cat, **kw)
 
 
@@ -57,9 +58,13 @@ class IsbnTests(Base):
 
 
 class EditionTests(Base):
-    def test_author_blank_or_unknown(self):
-        self.assertEqual(self.edition("A").author, "")
-        self.assertEqual(self.edition("B", author=services.UNKNOWN_AUTHOR).author, "Unknown author")
+    def test_author_is_required_and_never_substituted(self):
+        for blank in ("", "   "):
+            with self.assertRaises(RuleViolation) as ctx:
+                self.edition("A", author=blank)
+            self.assertEqual(ctx.exception.code, "author_required")
+        self.assertEqual(self.edition("B", author="  Jane Doe ").author, "Jane Doe")
+        self.assertEqual(self.edition("C", author="Unknown author").author, "Unknown author")
 
     def test_title_required_and_year_bounds(self):
         with self.assertRaises(RuleViolation):
@@ -263,7 +268,7 @@ class ViewTests(Base):
         self.client.force_login(self.owner)
         data = {
             "title": "Dune",
-            "author": "",
+            "author": "Frank Herbert",
             "publisher": "",
             "edition_label": "",
             "publication_year": "",

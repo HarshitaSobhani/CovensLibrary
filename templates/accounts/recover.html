@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block heading %}Recover access{% endblock %}
+{% extends "base.html" %}{% block title %}Recover access - {{ library.library_name }}{% endblock %}{% block heading %}Recover access{% endblock %}
 {% block content %}<div class="card-surface" style="max-width:26rem;margin:2rem auto">
 <p>Run <code>python manage.py issue_recovery_code --username YOUR_USERNAME</code> on the computer, then enter the code here. Codes work once and expire after 15 minutes.</p>
 <form method="post" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="text-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}{{ form.as_p }}<button class="btn-primary-token" type="submit">Reset password</button></form></div>{% endblock %}

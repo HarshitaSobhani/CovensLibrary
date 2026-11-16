@@ -22,7 +22,7 @@ class OptionsForm(BootstrapFormMixin, forms.Form):
         label="Create missing categories (otherwise rows with unknown categories are rejected)",
     )
     copy_id_mode = forms.ChoiceField(
-        choices=ImportBatch.CopyIdMode.choices, widget=forms.RadioSelect
+        label="Copy IDs", choices=ImportBatch.CopyIdMode.choices, widget=forms.RadioSelect
     )
     isbn_warnings_acknowledged = forms.BooleanField(
         required=False, label="I have reviewed the duplicate ISBN warnings and want to continue"
@@ -72,16 +72,35 @@ def import_preview(request, pk):
         and batch.status == ImportBatch.Status.VALIDATED
         and form.is_valid()
     ):
+        data = form.cleaned_data
+        confirming = "confirm" in request.POST
+        # What the owner was shown: the persisted options and row state behind the token that
+        # the preview page carried. Anything else is a preview they have not reviewed.
+        reviewed = request.POST.get("preview_token", "")
+        unchanged = (
+            reviewed == svc.preview_state(batch)
+            and batch.create_missing_categories == data["create_missing_categories"]
+            and batch.copy_id_mode == data["copy_id_mode"]
+        )
         svc.set_options(
             batch,
-            create_missing_categories=form.cleaned_data["create_missing_categories"],
-            copy_id_mode=form.cleaned_data["copy_id_mode"],
-            isbn_warnings_acknowledged=form.cleaned_data["isbn_warnings_acknowledged"],
-        )
-        if "confirm" in request.POST:
+            create_missing_categories=data["create_missing_categories"],
+            copy_id_mode=data["copy_id_mode"],
+            isbn_warnings_acknowledged=data["isbn_warnings_acknowledged"],
+        )  # regenerates the preview against the live catalogue
+        if confirming and not (unchanged and svc.preview_state(batch) == reviewed):
+            messages.warning(
+                request,
+                "The preview was out of date and has been regenerated. Nothing was imported: "
+                "review the updated results, then confirm again.",
+            )
+        elif confirming:
             try:
                 svc.execute_import(
-                    batch, actor=request.user, accept_excluded=form.cleaned_data["accept_excluded"]
+                    batch,
+                    actor=request.user,
+                    accept_excluded=data["accept_excluded"],
+                    reviewed_state=reviewed,
                 )
             except RuleViolation as exc:
                 messages.error(request, exc.message)
@@ -96,6 +115,7 @@ def import_preview(request, pk):
             "batch": batch,
             "form": form,
             "summary": svc.summarise(batch),
+            "preview_token": svc.preview_state(batch),
             "page": Paginator(batch.rows.all(), 100).get_page(request.GET.get("page")),
             "qs": "",
             **NAV,

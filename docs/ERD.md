@@ -216,11 +216,11 @@ erDiagram
     BOOK_EDITION {
         bigint id PK
         string title
-        string author "blank or 'Unknown author'"
+        string author "required for new records"
         string publisher
         string edition_label
         smallint publication_year "nullable"
-        bigint category_id FK
+        bigint category_id FK "optional (nullable)"
         string isbn "nullable, indexed, NOT unique (warning on duplicate)"
         text description
         text notes

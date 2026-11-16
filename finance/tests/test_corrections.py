@@ -479,3 +479,88 @@ class LedgerInvariantTests(TestCase):
         for a, b in zip(subs, subs[1:], strict=False):
             self.assertLessEqual(a.expires_on, b.starts_on)
         self.assertGreater(len(set(ops)), 3)
+
+
+class OutstandingLoanRulesTests(Base):
+    """O-07: a token collection cannot be reversed while a book is out (as a refund cannot)."""
+
+    def setUp(self):
+        super().setUp()
+        saved = list(fc.OUTSTANDING_LOAN_CHECKS)
+        fc.OUTSTANDING_LOAN_CHECKS.append(lambda member: member.pk == self.member.pk)
+        self.addCleanup(lambda: fc.OUTSTANDING_LOAN_CHECKS.__setitem__(slice(None), saved))
+
+    def test_token_collection_reversal_blocked_while_a_book_is_out(self):
+        original = FinancialTransaction.objects.get(kind="token_collection")
+        code = self.rule(
+            fc.reverse_transaction,
+            actor=self.owner,
+            transaction_id=original.pk,
+            reason="entered by mistake",
+            entries=[Entry("cash", 50000)],
+            today=TODAY,
+        )
+        self.assertEqual(code, "loans_outstanding")
+        self.assertEqual(self.state(), tokens.HELD)  # token still held, ledger unchanged
+        self.assertFalse(FinancialTransaction.objects.filter(kind="reversal").exists())
+
+    def test_reversal_is_distinct_from_refund_and_both_are_blocked_alike(self):
+        self.assertEqual(self.rule(self.refund), "loans_outstanding")
+
+    def test_reversal_allowed_once_no_book_is_out(self):
+        fc.OUTSTANDING_LOAN_CHECKS.clear()  # the book has been returned
+        original = FinancialTransaction.objects.get(kind="token_collection")
+        reversal = fc.reverse_transaction(
+            actor=self.owner,
+            transaction_id=original.pk,
+            reason="entered by mistake",
+            entries=[Entry("cash", 50000)],
+            today=TODAY,
+        ).transactions[0]
+        self.assertEqual(reversal.kind, "reversal")
+        self.assertEqual(self.state(), tokens.REVERSED)
+
+
+class CancellationWithLoanTests(TestCase):
+    """O-06: a subscription cannot be cancelled while a book is out under the membership."""
+
+    def setUp(self):
+        from circulation import services as cs
+        from circulation.tests.helpers import make_copies, member_at
+
+        self.owner = make_owner()
+        self.member = member_at(self.owner)
+        self.copy = make_copies(self.owner, 1)[0]
+        self.loan = cs.issue_loan(actor=self.owner, member=self.member, copy=self.copy, today=TODAY)
+        from memberships.models import MemberSubscription
+
+        self.sub = MemberSubscription.objects.get(member=self.member)
+
+    def test_cancel_blocked_while_a_loan_is_outstanding_and_nothing_changes(self):
+        from circulation.models import Loan
+        from core.errors import RuleViolation
+        from memberships import services as ms
+
+        before = (Loan.objects.values().get(pk=self.loan.pk), FinancialTransaction.objects.count())
+        with self.assertRaises(RuleViolation) as ctx:
+            ms.cancel_subscription(
+                actor=self.owner, subscription=self.sub, reason="member asked", today=TODAY
+            )
+        self.assertEqual(ctx.exception.code, "loan_outstanding")
+        self.sub.refresh_from_db()
+        self.assertIsNone(self.sub.cancelled_at)
+        after = (Loan.objects.values().get(pk=self.loan.pk), FinancialTransaction.objects.count())
+        self.assertEqual(before, after)  # due date, loan history and payments untouched
+
+    def test_cancel_allowed_after_the_book_is_returned_without_any_refund(self):
+        from circulation import services as cs
+        from memberships import services as ms
+
+        cs.return_loan(actor=self.owner, loan=self.loan, today=TODAY)
+        payments = FinancialTransaction.objects.count()
+        ms.cancel_subscription(
+            actor=self.owner, subscription=self.sub, reason="member asked", today=TODAY
+        )
+        self.sub.refresh_from_db()
+        self.assertIsNotNone(self.sub.cancelled_at)
+        self.assertEqual(FinancialTransaction.objects.count(), payments)  # no refund or credit

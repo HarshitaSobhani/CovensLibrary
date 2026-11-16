@@ -279,6 +279,13 @@ def reverse_transaction(
                     "token_in_use",
                     "This token was already forfeited or refunded and cannot be reversed.",
                 )
+            if has_outstanding_loans(member):
+                # O-07: the token secures the book that is out. Same rule as a token refund.
+                # Distinct from a refund: a reversal returns money the owner collected in error.
+                raise RuleViolation(
+                    "loans_outstanding",
+                    "The token collection cannot be reversed while a book is outstanding.",
+                )
             ledger_delta = -original.amount_paise
         else:
             if state != tokens.FORFEITED:

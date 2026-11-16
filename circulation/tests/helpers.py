@@ -13,7 +13,9 @@ D = date
 
 def make_copies(owner, n=2, title="A Book"):
     category, _ = Category.objects.get_or_create(name="Fiction")
-    edition = catalogue.create_edition(actor=owner, title=title, category=category)
+    edition = catalogue.create_edition(
+        author="Test Author", actor=owner, title=title, category=category
+    )
     return catalogue.add_copies(edition, n, actor=owner, source="purchased")
 
 

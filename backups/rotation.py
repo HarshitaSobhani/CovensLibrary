@@ -384,9 +384,21 @@ def set_current(target_fp, *, confirm, store=None):
     if keystore.load_pending_key(store) is not None:
         raise RotationError("A rotation is in progress: resume or abort it first.")
     working = keystore.load_working_key(store)
+    if working is not None and fp(working) == target_fp:
+        # An earlier attempt already made this key current and stopped before finishing: only the
+        # clean-up of its retired copy is left. Idempotent, so the retry never refuses.
+        if keystore.load_retired_key(target_fp, store) is not None:
+            keystore.delete_retired(target_fp, store)
+        record(
+            "backup.key_current_set", summary={"from": target_fp, "to": target_fp, "resumed": True}
+        )
+        return {"working": target_fp, "retired": None}
     target = keystore.load_retired_key(target_fp, store)
     if target is None or fp(target) != target_fp:
         raise RotationError("That key is not among the retired keys in the credential store.")
+    # Each step leaves every key in at least one slot: the old working key is kept as retired
+    # BEFORE the working slot is replaced, and the target's retired copy is removed only after it
+    # is the working key.
     if working is not None:
         keystore.save_retired(working, store)
     keystore.save_working_key(target, store, replace=True)

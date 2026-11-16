@@ -3,6 +3,7 @@
 import csv
 import hashlib
 import io
+import json
 import re
 import zipfile
 from datetime import date, datetime
@@ -11,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter
 
 from audit.services import record
 from core.errors import RuleViolation
@@ -68,15 +70,18 @@ COLUMNS = [
     "Legacy Copy IDs",
     "Shelf Location",
 ]
-REQUIRED_COLUMNS = ["Title", "Category"]
+REQUIRED_COLUMNS = ["Title", "Author"]  # the only mandatory fields
 DOC = {
-    "Title": "Required.",
-    "Author": "Optional. Leave blank or write 'Unknown author'.",
+    "Title": "Required. The heading may be 'Title' or 'Book Title'.",
+    "Author": "Required.",
     "ISBN": "Optional. ISBN-10 or ISBN-13; duplicates produce a warning.",
     "Publisher": "Optional.",
     "Edition": "Optional edition information, e.g. '2nd'.",
     "Publication Year": "Optional four-digit year.",
-    "Category": "Required. Must exist, or choose 'create missing categories' during import.",
+    "Category": (
+        "Optional. If given and not yet in the catalogue, the row is rejected unless "
+        "'create missing categories' is chosen during import. Blank is allowed."
+    ),
     "Description": "Optional.",
     "Notes": "Optional.",
     "Acquisition Source": "purchased or donated (default purchased).",
@@ -107,7 +112,8 @@ def build_template():
     guide.append(
         [
             "Example",
-            "The Hobbit | Tolkien | 9780261102217 | HarperCollins | 2nd | 1999 | Fiction",
+            "The Hobbit | Tolkien | 9780261102217 | HarperCollins | 2nd | 1999 | Fiction "
+            "(only Title and Author are required)",
         ]
     )
     buf = io.BytesIO()
@@ -127,11 +133,25 @@ def _text(value):
 
 
 _COLUMN_LOOKUP = {" ".join(c.lower().split()): c for c in COLUMNS}
+_COLUMN_LOOKUP["book title"] = "Title"  # supported alternative heading (owner decision O-05)
 
 
 def _canonical_column(name):
     """Match headers ignoring case and repeated whitespace; unknown headers pass through."""
     return _COLUMN_LOOKUP.get(" ".join(name.lower().split()), name)
+
+
+def _reject_ambiguous_columns(headings, names):
+    """Refuse a sheet in which two columns map to the same field (never guess which to use)."""
+    for column in COLUMNS:
+        hits = [i for i, n in enumerate(names) if n == column]
+        if len(hits) > 1:
+            where = ", ".join(f"{get_column_letter(i + 1)} ('{headings[i]}')" for i in hits)
+            raise RuleViolation(
+                "header_duplicate",
+                f"More than one column is headed as '{column}': columns {where}. "
+                "Keep only one of them and upload the file again.",
+            )
 
 
 def read_workbook(upload):
@@ -167,7 +187,9 @@ def read_workbook(upload):
         header = next(iterator, None)
         if not header:
             raise RuleViolation("header_missing", "The Books sheet is empty.")
-        names = [_canonical_column(_text(h)) for h in header]
+        headings = [_text(h) for h in header]
+        names = [_canonical_column(h) for h in headings]
+        _reject_ambiguous_columns(headings, names)
         missing = [c for c in REQUIRED_COLUMNS if c not in names]
         if missing:
             raise RuleViolation(
@@ -179,11 +201,7 @@ def read_workbook(upload):
                 raise RuleViolation(
                     "too_many_rows", f"The sheet has more than {MAX_SCAN_ROWS} rows."
                 )
-            record_ = {}
-            for n, v in zip(names, values, strict=False):
-                if n:
-                    # A repeated header never blanks a filled one: first non-empty cell wins.
-                    record_[n] = record_.get(n) or _text(v)
+            record_ = {n: _text(v) for n, v in zip(names, values, strict=False) if n}
             if not any(record_.values()):
                 continue
             rows.append((scanned, record_))
@@ -283,6 +301,8 @@ def _validate_row(raw, batch, category_names, clean, errors, warnings):
     if not clean["title"]:
         errors.append(_issue("Title", "Title is required.", "title_required"))
     _length_check(raw, clean, "Author", "author", errors)
+    if not clean["author"]:
+        errors.append(_issue("Author", "Author is required.", "author_required"))
     _length_check(raw, clean, "Publisher", "publisher", errors)
     _length_check(raw, clean, "Edition", "edition_label", errors)
     _length_check(raw, clean, "Donor Name", "donor_name", errors)
@@ -311,7 +331,7 @@ def _validate_row(raw, batch, category_names, clean, errors, warnings):
     category = raw.get("Category", "")
     clean["category"] = category
     if not category:
-        errors.append(_issue("Category", "Category is required.", "category_required"))
+        pass  # optional: a blank category imports as "no category"
     elif len(category) > TEXT_LIMITS["Category"]:
         errors.append(
             _issue("Category", f"Too long (maximum {TEXT_LIMITS['Category']}).", "too_long")
@@ -507,6 +527,22 @@ def stage_import(upload, *, actor):
     return batch
 
 
+def preview_state(batch):
+    """Fingerprint of the validated state of every row, as the owner saw it in the preview.
+
+    Covers the import options, which rows are valid AND what each row would do (cleaned
+    values, errors, warnings), so a change that keeps the totals identical is still detected.
+    """
+    digest = hashlib.sha256()
+    digest.update(f"{batch.copy_id_mode}|{batch.create_missing_categories}|".encode())
+    for row in batch.rows.order_by("pk").values_list(
+        "pk", "is_valid", "clean", "errors", "warnings"
+    ):
+        digest.update(json.dumps(row, sort_keys=True, default=str).encode())
+    return digest.hexdigest()
+
+
+@transaction.atomic
 def set_options(batch, *, create_missing_categories, copy_id_mode, isbn_warnings_acknowledged):
     if batch.status != ImportBatch.Status.VALIDATED:
         raise RuleViolation("batch_closed", "This import is already closed.")
@@ -519,10 +555,27 @@ def set_options(batch, *, create_missing_categories, copy_id_mode, isbn_warnings
     return validate_batch(batch)
 
 
+# Optional metadata the owner may want to complete later (shown in the preview).
+OPTIONAL_FIELDS = (
+    ("Category", lambda c: bool(c.get("category"))),
+    ("ISBN", lambda c: bool(c.get("isbn"))),
+    ("Publisher", lambda c: bool(c.get("publisher"))),
+    ("Edition", lambda c: bool(c.get("edition_label"))),
+    ("Publication Year", lambda c: c.get("publication_year") is not None),
+    ("Description", lambda c: bool(c.get("description"))),
+    ("Notes", lambda c: bool(c.get("notes"))),
+    ("Acquisition details", lambda c: bool(c.get("acquired_on") or c.get("unit_cost_paise"))),
+)
+
+
 def summarise(batch):
     rows = list(batch.rows.all())
     valid = [r for r in rows if r.is_valid]
+    missing = {
+        name: sum(1 for r in valid if not present(r.clean)) for name, present in OPTIONAL_FIELDS
+    }
     return {
+        "missing_optional": [(n, k) for n, k in missing.items() if k],
         "total": len(rows),
         "valid": len(valid),
         "invalid": len(rows) - len(valid),
@@ -542,13 +595,19 @@ def summarise(batch):
 
 
 @transaction.atomic
-def execute_import(batch, *, actor, accept_excluded=False):
+def execute_import(batch, *, actor, accept_excluded=False, reviewed_state=None):
+    """Import the valid rows. `reviewed_state` is the `preview_state` the owner was shown: when
+    given, anything that differs from it (options, rows, catalogue) refuses the import."""
     batch = ImportBatch.objects.select_for_update().get(pk=batch.pk)
     if batch.status != ImportBatch.Status.VALIDATED:
         raise RuleViolation("batch_closed", "This import was already confirmed or closed.")
-    before = summarise(batch)
+    if reviewed_state is not None and reviewed_state != preview_state(batch):
+        raise RuleViolation("stale_preview", "The preview changed. Review it again.")
+    previewed = preview_state(batch)
     rows = validate_batch(batch)  # re-check against the live catalogue
-    if summarise(batch)["valid"] != before["valid"]:
+    # Compare the validated state of every row, not just how many are valid: the owner
+    # confirmed THOSE rows with THOSE outcomes.
+    if preview_state(batch) != previewed:
         raise RuleViolation("stale_preview", "The catalogue changed. Review the preview again.")
     summary = summarise(batch)
     if summary["valid"] == 0:
@@ -579,8 +638,10 @@ def _run_import(batch, rows, summary, actor):
         if not row.is_valid:
             continue
         c = row.clean
-        category, created = services.get_or_create_category(c["category"], actor=actor)
-        created_categories += int(created)
+        category = None
+        if c["category"]:
+            category, created = services.get_or_create_category(c["category"], actor=actor)
+            created_categories += int(created)
         edition = services.create_edition(
             actor=actor,
             title=c["title"],

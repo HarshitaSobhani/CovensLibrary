@@ -1,7 +1,7 @@
-{% extends "base.html" %}{% load membership_panel %}{% block heading %}{{ member.membership_no }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ member.membership_no }} - {{ library.library_name }}{% endblock %}{% load membership_panel %}{% block heading %}{{ member.membership_no }}{% endblock %}
 {% block content %}
 <div class="card-surface">
-  <h1 style="font-family: var(--font-display)">{{ member.full_name }}</h1>
+  <h2 class="h1" style="font-family: var(--font-display)">{{ member.full_name }}</h2>
   <dl>
     <dt>Member ID</dt><dd>{{ member.membership_no }}</dd>
     <dt>Mobile</dt><dd>{{ member.mobile_e164 }}</dd>

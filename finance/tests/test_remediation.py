@@ -226,7 +226,10 @@ class AmountInterfaceTests(TestCase):
         from catalogue.models import Category
 
         edition = catalogue_services.create_edition(
-            actor=self.owner, title="T", category=Category.objects.create(name="C")
+            author="Test Author",
+            actor=self.owner,
+            title="T",
+            category=Category.objects.create(name="C"),
         )
         url = reverse("catalogue:copies_add", args=[edition.pk])
         base = {

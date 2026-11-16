@@ -28,7 +28,16 @@ def workbook(rows, header=None, sheet="Books"):
     return buf.getvalue()
 
 
-def row(title="Book", author="", isbn="", category="Fiction", copies=1, ids="", source="", **kw):
+def row(
+    title="Book",
+    author="Test Author",
+    isbn="",
+    category="Fiction",
+    copies=1,
+    ids="",
+    source="",
+    **kw,
+):
     data = dict.fromkeys(svc.COLUMNS, "")
     data.update(
         {
@@ -43,6 +52,12 @@ def row(title="Book", author="", isbn="", category="Fiction", copies=1, ids="", 
     )
     data.update(kw)
     return [data[c] for c in svc.COLUMNS]
+
+
+def reviewed(client, url, **data):
+    """Form data for Confirm carrying the token of the preview the owner is looking at."""
+    token = client.get(url).context["preview_token"]
+    return {"copy_id_mode": "generate", "confirm": "1", "preview_token": token, **data}
 
 
 def upload(content, name="books.xlsx"):
@@ -151,7 +166,11 @@ class RowValidationTests(ImportBase):
 
     def test_duplicate_isbn_warnings_database_and_file(self):
         services.create_edition(
-            actor=self.owner, title="Existing", category=self.cat, isbn="9780261102217"
+            author="Test Author",
+            actor=self.owner,
+            title="Existing",
+            category=self.cat,
+            isbn="9780261102217",
         )
         batch = self.stage(
             [
@@ -169,7 +188,9 @@ class RowValidationTests(ImportBase):
         self.assertEqual([w["code"] for w in batch.rows.all()[1].warnings], ["row_duplicate"])
 
     def test_copy_id_modes_and_conflicts(self):
-        e = services.create_edition(actor=self.owner, title="Old", category=self.cat)
+        e = services.create_edition(
+            author="Test Author", actor=self.owner, title="Old", category=self.cat
+        )
         services.add_copies(e, 1, actor=self.owner, source="purchased", codes=["EXIST-1"])
         batch = self.stage(
             [
@@ -251,7 +272,11 @@ class ExecutionTests(ImportBase):
 
     def test_isbn_warnings_need_acknowledgement(self):
         services.create_edition(
-            actor=self.owner, title="E", category=self.cat, isbn="9780261102217"
+            author="Test Author",
+            actor=self.owner,
+            title="E",
+            category=self.cat,
+            isbn="9780261102217",
         )
         batch = self.stage([row("A", isbn="9780261102217")])
         self.options(batch)
@@ -283,7 +308,9 @@ class ExecutionTests(ImportBase):
         batch.refresh_from_db()
         self.assertEqual(batch.status, "validated")
         # copy-id counter did not skip numbers
-        e = services.create_edition(actor=self.owner, title="Z", category=self.cat)
+        e = services.create_edition(
+            author="Test Author", actor=self.owner, title="Z", category=self.cat
+        )
         self.assertEqual(
             services.add_copies(e, 1, actor=self.owner, source="purchased")[0].copy_code,
             "COV-C-000001",
@@ -301,7 +328,9 @@ class ExecutionTests(ImportBase):
     def test_stale_preview_detected(self):
         batch = self.stage([row("A", copies=1, ids="NEW-1")])
         self.options(batch, copy_id_mode="supplied")
-        e = services.create_edition(actor=self.owner, title="Other", category=self.cat)
+        e = services.create_edition(
+            author="Test Author", actor=self.owner, title="Other", category=self.cat
+        )
         services.add_copies(e, 1, actor=self.owner, source="purchased", codes=["NEW-1"])
         with self.assertRaises(RuleViolation) as ctx:
             svc.execute_import(batch, actor=self.owner)
@@ -339,18 +368,11 @@ class ImportViewTests(ImportBase):
         self.assertContains(page, "1 valid")
         self.assertContains(page, "1 with errors")
         self.assertEqual(BookEdition.objects.count(), 0)
-        r = self.client.post(
-            reverse("catalogue:import_preview", args=[batch.pk]),
-            {"copy_id_mode": "generate", "confirm": "1"},
-            follow=True,
-        )
+        url = reverse("catalogue:import_preview", args=[batch.pk])
+        r = self.client.post(url, reviewed(self.client, url), follow=True)
         self.assertContains(r, "will be left out")  # needs explicit acknowledgement
         self.assertEqual(BookEdition.objects.count(), 0)
-        r = self.client.post(
-            reverse("catalogue:import_preview", args=[batch.pk]),
-            {"copy_id_mode": "generate", "accept_excluded": "on", "confirm": "1"},
-            follow=True,
-        )
+        r = self.client.post(url, reviewed(self.client, url, accept_excluded="on"), follow=True)
         self.assertContains(r, "Imported 1 edition")
         self.assertEqual(BookCopy.objects.count(), 2)
         report = self.client.get(reverse("catalogue:import_errors", args=[batch.pk]))
@@ -371,10 +393,33 @@ class ImportViewTests(ImportBase):
 
 
 class HeaderNormalisationTests(ImportBase):
-    def test_duplicate_category_header_keeps_filled_value(self):
-        header = [*svc.COLUMNS, "Category"]  # second, empty Category column
-        batch = self.stage([[*row(), ""]], header=header)
-        self.assertTrue(batch.rows.get().is_valid)
+    def test_duplicate_column_is_rejected_not_guessed(self):
+        header = [*svc.COLUMNS, "Category"]  # a second Category column
+        with self.assertRaises(RuleViolation) as ctx:
+            self.stage([[*row(), "Poetry"]], header=header)
+        self.assertEqual(ctx.exception.code, "header_duplicate")
+        self.assertIn("'Category'", ctx.exception.message)
+        self.assertIn("columns G ('Category'), Q ('Category')", ctx.exception.message)
+        self.assertEqual(ImportBatch.objects.count(), 0)
+
+    def test_book_title_heading_is_accepted(self):
+        for heading in ("Book Title", "book  title", "BOOK TITLE"):
+            header = [heading if c == "Title" else c for c in svc.COLUMNS]
+            batch = self.stage([row("Named")], header=header)
+            r = batch.rows.get()
+            self.assertTrue(r.is_valid, heading)
+            self.assertEqual(r.clean["title"], "Named")
+
+    def test_title_and_book_title_together_are_ambiguous(self):
+        header = ["Title", "Author", "Book Title"]
+        with self.assertRaises(RuleViolation) as ctx:
+            self.stage([["One", "Someone", "Two"]], header=header)
+        self.assertEqual(ctx.exception.code, "header_duplicate")
+        self.assertIn("A ('Title'), C ('Book Title')", ctx.exception.message)
+
+    def test_unrecognised_duplicate_columns_are_ignored(self):
+        header = [*svc.COLUMNS, "Remarks", "Remarks"]
+        self.assertTrue(self.stage([[*row(), "x", "y"]], header=header).rows.get().is_valid)
 
     def test_headers_match_ignoring_case_and_spacing(self):
         header = [c.upper() + " " for c in svc.COLUMNS]
@@ -430,10 +475,12 @@ class ModeAndCategoryRegressionTests(ImportBase):
                 self.options(batch, copy_id_mode=bad)
             self.assertEqual(ctx.exception.code, "mode_invalid")
 
-    def test_blank_category_error_even_when_creating_missing(self):
+    def test_blank_category_accepted_whatever_the_create_setting(self):
         batch = self.stage([row("A", category="")])
-        r = self.options(batch, create_missing_categories=True)[0]
-        self.assertEqual([e["code"] for e in r.errors], ["category_required"])
+        for create in (True, False):
+            r = self.options(batch, create_missing_categories=create)[0]
+            self.assertTrue(r.is_valid)
+            self.assertEqual(r.errors, [])
 
     def test_failed_rows_create_no_categories(self):
         batch = self.stage([row("Good", category="New"), row("Bad", category="Ghost", isbn="1")])
@@ -451,48 +498,341 @@ class ModeAndCategoryRegressionTests(ImportBase):
         self.assertEqual(batch.copy_id_mode, "supplied")
         page = self.client.get(url)
         self.assertContains(page, "0 valid")
-        self.assertContains(
-            page,
-            'value="supplied" class="form-check-input" id="id_copy_id_mode_1" required checked',
+        self.assertRegex(page.content.decode(), r'value="supplied"[^>]*\schecked')
+
+
+MINIMAL = {"Title": "Only Title", "Author": "Only Author"}
+
+
+def minimal_row(**kw):
+    """Title + Author with every other field blank."""
+    data = dict.fromkeys(svc.COLUMNS, "")
+    data.update(MINIMAL)
+    data.update(kw)
+    return [data[c] for c in svc.COLUMNS]
+
+
+class MandatoryFieldRuleTests(ImportBase):
+    """Business rule: only Title and Author are mandatory; everything else is optional."""
+
+    def confirm(self, batch, **kw):
+        self.options(batch, **kw)
+        return svc.execute_import(batch, actor=self.owner)
+
+    def test_title_and_author_alone_import_successfully(self):
+        batch = self.stage([minimal_row()])
+        r = batch.rows.get()
+        self.assertTrue(r.is_valid)
+        self.assertEqual(r.errors, [])
+        self.confirm(batch)
+        e = BookEdition.objects.get()
+        self.assertEqual((e.title, e.author), ("Only Title", "Only Author"))
+        self.assertIsNone(e.category)
+        self.assertEqual((e.isbn, e.publisher, e.edition_label, e.description, e.notes), ("",) * 5)
+        self.assertIsNone(e.publication_year)
+        self.assertEqual(BookCopy.objects.filter(edition=e).count(), 1)  # blank Copies = 1
+        self.assertEqual(Category.objects.filter(name="").count(), 0)
+
+    def test_missing_title_rejected_with_field_error(self):
+        r = self.stage([minimal_row(Title="")]).rows.get()
+        self.assertFalse(r.is_valid)
+        self.assertEqual([(e["field"], e["code"]) for e in r.errors], [("Title", "title_required")])
+
+    def test_missing_author_rejected_with_field_error(self):
+        r = self.stage([minimal_row(Author="")]).rows.get()
+        self.assertFalse(r.is_valid)
+        self.assertEqual(
+            [(e["field"], e["code"]) for e in r.errors], [("Author", "author_required")]
         )
 
+    def test_whitespace_only_title_rejected(self):
+        r = self.stage([minimal_row(Title="   \t ")]).rows.get()
+        self.assertFalse(r.is_valid)
+        self.assertEqual([e["code"] for e in r.errors], ["title_required"])
 
-class BlankCategoryWorkbookShapeTests(ImportBase):
-    """Shape of a real owner workbook: 16 headers, blank Category/Legacy IDs/Copies."""
+    def test_whitespace_only_author_rejected(self):
+        r = self.stage([minimal_row(Author="  \t  ")]).rows.get()
+        self.assertFalse(r.is_valid)
+        self.assertEqual([e["code"] for e in r.errors], ["author_required"])
 
-    def make(self, n=208):
-        rows = [row(f"Book {i}", category="", copies="") for i in range(n)]
-        return upload(workbook(rows))
+    def test_author_is_never_substituted(self):
+        self.confirm(self.stage([minimal_row(Author="Unknown author")]))
+        self.assertEqual(BookEdition.objects.get().author, "Unknown author")  # verbatim, user-given
+        rejected = self.stage([minimal_row(Author="")]).rows.get()
+        self.assertFalse(rejected.is_valid)  # never turned into "Unknown author"
 
-    def preview_url(self, batch):
-        return reverse("catalogue:import_preview", args=[batch.pk])
+    def test_blank_category_accepted(self):
+        batch = self.stage([minimal_row(), minimal_row(Title="Two", Category="")])
+        self.assertTrue(all(r.is_valid for r in batch.rows.all()))
+        self.assertFalse(any(e["field"] == "Category" for r in batch.rows.all() for e in r.errors))
+        self.assertEqual(Category.objects.count(), 1)  # only the fixture's "Fiction"; none invented
 
-    def test_blank_categories_reported_accurately_and_ids_not_required(self):
+    def test_unknown_nonempty_category_follows_create_setting(self):
+        batch = self.stage([minimal_row(Category="Poetry")])
+        r = self.options(batch, create_missing_categories=False)[0]
+        self.assertFalse(r.is_valid)
+        self.assertEqual([e["code"] for e in r.errors], ["category_unknown"])
+        r = self.options(batch, create_missing_categories=True)[0]
+        self.assertTrue(r.is_valid)
+        svc.execute_import(batch, actor=self.owner)
+        self.assertEqual(BookEdition.objects.get().category.name, "Poetry")
+
+    def test_generated_ids_work_with_incomplete_metadata(self):
+        batch = self.stage([minimal_row(Copies="3"), minimal_row(Title="Two")])
+        self.confirm(batch, copy_id_mode="generate")
+        codes = list(BookCopy.objects.values_list("copy_code", flat=True))
+        self.assertEqual(len(codes), 4)
+        self.assertEqual(len(set(codes)), 4)
+        self.assertTrue(all(c.startswith("COV-C-") for c in codes))
+
+    def test_malformed_optional_values_still_rejected(self):
+        for field, bad in (("ISBN", "123"), ("Publication Year", "abc"), ("Copies", "101")):
+            r = self.stage([minimal_row(**{field: bad})]).rows.get()
+            self.assertFalse(r.is_valid, field)
+            self.assertEqual({e["field"] for e in r.errors}, {field})
+
+    def test_missing_title_or_author_column_is_a_clear_error(self):
+        for header in (["Title", "Category"], ["Author", "Category"]):
+            with self.assertRaises(RuleViolation) as ctx:
+                self.stage([["x", "y"]], header=header)
+            self.assertEqual(ctx.exception.code, "header_missing")
+
+    def test_preview_lists_missing_optional_metadata(self):
         self.client.force_login(self.owner)
-        self.client.post(reverse("catalogue:import_start"), {"file": self.make()})
-        batch = ImportBatch.objects.get()
-        self.assertEqual(batch.copy_id_mode, "generate")  # initial mode is generate
-        codes = {e["code"] for r in batch.rows.all() for e in r.errors}
-        self.assertEqual(codes, {"category_required"})  # no copy-ID errors in generate mode
-        page = self.client.get(self.preview_url(batch))
-        self.assertContains(page, "208 with errors")
-        self.assertContains(page, "0 valid")
+        batch = self.stage([minimal_row(), minimal_row(Title="Two", Category="Fiction")])
+        page = self.client.get(reverse("catalogue:import_preview", args=[batch.pk]))
+        self.assertContains(page, "2 valid")
+        self.assertContains(page, "missing optional details")
+        self.assertContains(page, "Category 1")
+        self.assertContains(page, "ISBN 2")
 
+    def test_missing_optional_fields_remain_editable_after_import(self):
+        self.confirm(self.stage([minimal_row()]))
+        e = BookEdition.objects.get()
+        self.assertEqual(
+            e.missing_metadata,
+            [
+                "Category",
+                "ISBN",
+                "Publisher",
+                "Edition",
+                "Publication year",
+                "Description",
+                "Notes",
+            ],
+        )
+        self.client.force_login(self.owner)
+        url = reverse("catalogue:edition_edit", args=[e.pk])
+        self.assertContains(self.client.get(url), "Only Title")
+        r = self.client.post(
+            url,
+            {
+                "title": "Only Title",
+                "author": "Only Author",
+                "category": self.cat.pk,
+                "publisher": "Penguin",
+                "publication_year": "2001",
+                "isbn": "9780261102217",
+                "edition_label": "",
+                "description": "",
+                "notes": "",
+            },
+        )
+        self.assertEqual(r.status_code, 302)
+        e.refresh_from_db()
+        self.assertEqual((e.category, e.publisher, e.publication_year), (self.cat, "Penguin", 2001))
+        self.assertEqual(e.missing_metadata, ["Edition", "Description", "Notes"])
+        detail = self.client.get(reverse("catalogue:edition_detail", args=[e.pk]))
+        self.assertContains(detail, "Incomplete record")
+        listing = self.client.get(reverse("catalogue:edition_list") + "?incomplete=1")
+        self.assertContains(listing, "Only Title")
+
+    def test_incomplete_edition_without_author_stays_editable_but_new_needs_author(self):
+        self.client.force_login(self.owner)
+        legacy = BookEdition.objects.create(title="Legacy", author="", category=None)
+        url = reverse("catalogue:edition_edit", args=[legacy.pk])
+        r = self.client.post(url, {"title": "Legacy 2", "author": "", "category": ""})
+        self.assertEqual(r.status_code, 302)  # legacy blank author does not block edits
+        r = self.client.post(
+            reverse("catalogue:edition_create"), {"title": "New", "author": "", "category": ""}
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Author is required.")
+
+
+class ModePersistenceWithIncompleteRowsTests(ImportBase):
     def test_generate_mode_survives_update_and_reload(self):
         self.client.force_login(self.owner)
-        self.client.post(reverse("catalogue:import_start"), {"file": self.make(3)})
-        batch = ImportBatch.objects.get()
-        url = self.preview_url(batch)
+        batch = self.stage([minimal_row(Title=f"B{i}") for i in range(3)])
+        url = reverse("catalogue:import_preview", args=[batch.pk])
         self.client.post(url, {"copy_id_mode": "supplied", "refresh": "1"})
-        batch.refresh_from_db()
-        self.assertEqual(batch.copy_id_mode, "supplied")
         codes = {e["code"] for r in batch.rows.all() for e in r.errors}
-        self.assertIn("ids_count", codes)  # supplied mode: blank IDs rejected
+        self.assertEqual(codes, {"ids_count"})  # supplied mode needs one ID per copy
         self.client.post(url, {"copy_id_mode": "generate", "refresh": "1"})
         batch.refresh_from_db()
         self.assertEqual(batch.copy_id_mode, "generate")
-        codes = {e["code"] for r in batch.rows.all() for e in r.errors}
-        self.assertEqual(codes, {"category_required"})
+        self.assertTrue(all(r.is_valid for r in batch.rows.all()))
         html = self.client.get(url).content.decode()
         self.assertRegex(html, r'value="generate"[^>]*\schecked')
         self.assertNotRegex(html, r'value="supplied"[^>]*\schecked')
+
+
+class AuditRemediationTests(ImportBase):
+    """Engineering audit findings A-01 to A-03."""
+
+    def test_edition_in_inactive_category_stays_editable(self):  # A-01
+        inactive = Category.objects.create(name="Retired", is_active=False)
+        e = services.create_edition(
+            actor=self.owner, title="Old", author="Someone", category=inactive
+        )
+        self.client.force_login(self.owner)
+        r = self.client.post(
+            reverse("catalogue:edition_edit", args=[e.pk]),
+            {"title": "Old", "author": "Someone", "category": inactive.pk, "publisher": "P"},
+        )
+        self.assertEqual(r.status_code, 302)
+        e.refresh_from_db()
+        self.assertEqual((e.category, e.publisher), (inactive, "P"))
+        # an inactive category still cannot be chosen for another edition
+        other = services.create_edition(actor=self.owner, title="New", author="Someone")
+        r = self.client.post(
+            reverse("catalogue:edition_edit", args=[other.pk]),
+            {"title": "New", "author": "Someone", "category": inactive.pk},
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_set_options_is_atomic(self):  # A-02
+        batch = self.stage([minimal_row()])
+        with mock.patch.object(svc, "validate_batch", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                self.options(batch, copy_id_mode="supplied")
+        batch.refresh_from_db()
+        self.assertEqual(batch.copy_id_mode, "generate")  # option change rolled back
+
+    def test_stale_preview_detected_when_valid_rows_swap(self):  # A-03
+        # Same number of valid rows before and after, but a different set of rows.
+        batch = self.stage(
+            [minimal_row(Title="A", Category="Later"), minimal_row(Title="B", Category="Fiction")]
+        )
+        self.assertEqual([r.is_valid for r in batch.rows.all()], [False, True])
+        Category.objects.create(name="Later")
+        Category.objects.filter(name="Fiction").update(name="Renamed")
+        with self.assertRaises(RuleViolation) as ctx:
+            svc.execute_import(batch, actor=self.owner, accept_excluded=True)
+        self.assertEqual(ctx.exception.code, "stale_preview")
+        self.assertEqual(BookEdition.objects.count(), 0)
+
+    def test_confirm_never_imports_an_unreviewed_preview(self):  # A-04 / O-02
+        self.client.force_login(self.owner)
+        url_of = lambda b: reverse("catalogue:import_preview", args=[b.pk])  # noqa: E731
+        stale = "has been regenerated"
+
+        # 1. catalogue changed after the preview was shown
+        batch = self.stage([minimal_row(Title="A", Category="Later"), minimal_row(Title="B")])
+        url = url_of(batch)
+        data = reviewed(self.client, url)
+        Category.objects.create(name="Later")
+        r = self.client.post(url, data, follow=True)
+        self.assertContains(r, stale)
+        self.assertContains(r, "2 valid")  # regenerated preview displayed
+        self.assertEqual(BookEdition.objects.count(), 0)
+        r = self.client.post(url, data, follow=True)  # the OLD token again: still refused
+        self.assertContains(r, stale)
+        self.assertEqual(BookEdition.objects.count(), 0)
+        r = self.client.post(url, reviewed(self.client, url), follow=True)  # separate confirm
+        self.assertContains(r, "Import completed.")
+        self.assertEqual(BookEdition.objects.count(), 2)
+
+        # 2. an option changed in the same click as Confirm
+        batch = self.stage([minimal_row(Title="C", Category="Brand New")])
+        url = url_of(batch)
+        data = reviewed(self.client, url, create_missing_categories="on")
+        r = self.client.post(url, data, follow=True)
+        self.assertContains(r, stale)
+        self.assertEqual(BookEdition.objects.filter(title="C").count(), 0)
+        batch.refresh_from_db()
+        self.assertTrue(batch.create_missing_categories)  # option kept, preview regenerated
+        data = reviewed(self.client, url, create_missing_categories="on")
+        self.assertContains(self.client.post(url, data, follow=True), "Import completed.")
+        self.assertEqual(BookEdition.objects.filter(title="C").count(), 1)
+
+        # 3. copy-ID mode changed in the same click
+        batch = self.stage([minimal_row(Title="D", **{"Legacy Copy IDs": "L-1"})])
+        url = url_of(batch)
+        data = reviewed(self.client, url, copy_id_mode="supplied")
+        self.assertContains(self.client.post(url, data, follow=True), stale)
+        self.assertEqual(BookEdition.objects.filter(title="D").count(), 0)
+
+        # 4. no token, or a forged one
+        batch = self.stage([minimal_row(Title="E")])
+        url = url_of(batch)
+        for token in (None, "", "0" * 64):
+            data = {"copy_id_mode": "generate", "confirm": "1"}
+            if token is not None:
+                data["preview_token"] = token
+            self.assertContains(self.client.post(url, data, follow=True), stale)
+            self.assertEqual(BookEdition.objects.filter(title="E").count(), 0)
+
+        # 5. the acknowledgement boxes are confirmations, not preview changes
+        batch = self.stage([minimal_row(Title="F"), minimal_row(Title="")])
+        url = url_of(batch)
+        data = reviewed(self.client, url, accept_excluded="on")
+        self.assertContains(self.client.post(url, data, follow=True), "Import completed.")
+        self.assertEqual(BookEdition.objects.filter(title="F").count(), 1)
+
+    def test_service_refuses_a_reviewed_state_that_no_longer_matches(self):  # O-02
+        batch = self.stage([minimal_row()])
+        seen = svc.preview_state(batch)
+        self.options(batch, copy_id_mode="supplied")
+        self.options(batch, copy_id_mode="generate")
+        svc.execute_import(batch, actor=self.owner, reviewed_state=seen)  # same state again: fine
+        batch2 = self.stage([minimal_row(Title="Z", Category="Nope")])
+        seen = svc.preview_state(batch2)
+        self.options(batch2, create_missing_categories=True)
+        with self.assertRaises(RuleViolation) as ctx:
+            svc.execute_import(batch2, actor=self.owner, reviewed_state=seen)
+        self.assertEqual(ctx.exception.code, "stale_preview")
+
+    def test_preview_shows_author_and_labelled_controls(self):
+        self.client.force_login(self.owner)
+        batch = self.stage([minimal_row()])
+        page = self.client.get(reverse("catalogue:import_preview", args=[batch.pk]))
+        self.assertContains(page, "<th>Author</th>")
+        self.assertContains(page, "Only Author")
+        self.assertContains(page, "Copy IDs")
+        html = page.content.decode()
+        for value in ("generate", "supplied"):
+            self.assertRegex(html, rf'<input[^>]*type="radio"[^>]*value="{value}"[^>]*id="(\w+)"')
+        self.assertRegex(html, r'<label class="form-check-label" for="id_copy_id_mode_0">')
+
+    def test_stale_preview_detected_when_a_valid_row_changes_outcome(self):  # A-03
+        # The same rows stay valid and every total is identical, but what row A would do
+        # changes: its category was "to be created" in the preview and now already exists.
+        batch = self.stage([minimal_row(Title="A", Category="Later")])
+        self.options(batch, create_missing_categories=True)
+        before = svc.summarise(batch)
+        Category.objects.create(name="Later")
+        with self.assertRaises(RuleViolation) as ctx:
+            svc.execute_import(batch, actor=self.owner)
+        self.assertEqual(ctx.exception.code, "stale_preview")
+        self.assertEqual(BookEdition.objects.count(), 0)
+        after = svc.summarise(batch)
+        self.assertEqual((before["valid"], before["invalid"]), (after["valid"], after["invalid"]))
+
+    def test_unchanged_preview_still_confirms(self):
+        batch = self.stage([minimal_row(), minimal_row(Title="Two", Category="Fiction")])
+        self.options(batch)
+        svc.execute_import(batch, actor=self.owner)
+        self.assertEqual(BookEdition.objects.count(), 2)
+
+    def test_failed_set_options_rolls_back_row_validation_too(self):  # A-02
+        batch = self.stage([minimal_row()])
+        state = svc.preview_state(batch)
+        with mock.patch.object(
+            svc.ImportRow.objects, "bulk_update", side_effect=RuntimeError("boom")
+        ):
+            with self.assertRaises(RuntimeError):
+                self.options(batch, copy_id_mode="supplied", create_missing_categories=True)
+        batch.refresh_from_db()
+        self.assertEqual((batch.copy_id_mode, batch.create_missing_categories), ("generate", False))
+        self.assertEqual(svc.preview_state(batch), state)

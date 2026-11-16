@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block heading %}Loan {{ loan.pk }}{% endblock %}
+{% extends "base.html" %}{% block title %}Loan {{ loan.pk }} - {{ library.library_name }}{% endblock %}{% block heading %}Loan {{ loan.pk }}{% endblock %}
 {% block content %}
 <div class="card-surface">
   <dl>

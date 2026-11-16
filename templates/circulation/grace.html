@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block heading %}Grace period{% endblock %}
+{% extends "base.html" %}{% block title %}Grace period - {{ library.library_name }}{% endblock %}{% block heading %}Grace period{% endblock %}
 {% block content %}
 <div class="card-surface" style="max-width:44rem">
   <p>Grace period: <strong>{{ grace_days }} days</strong> after the due date. On the day after it ("day 8") the full token is forfeited automatically; a return on that day still forfeits.</p>

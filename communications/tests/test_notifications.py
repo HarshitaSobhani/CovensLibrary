@@ -171,6 +171,52 @@ class SendingTests(TestCase):
             (True, ""),
         )
 
+    def test_a_lapsed_lease_is_never_sent_by_the_stalled_worker(self):  # C-02
+        # Worker A claims both notifications at t0, then stalls. Its lease lapses; worker B
+        # claims and sends them. When A wakes up it must not send anything.
+        t0 = ist(2026, 11, 11, 10)
+        token_a, ids_a = cs.claim_due(t0, limit=10)
+        late = t0 + cs.LEASE + timedelta(seconds=1)
+        self.assertEqual(cs.send_due(late), {S.SMTP_ACCEPTED: 2})  # worker B
+        self.assertEqual(len(mail.outbox), 2)
+        for note_id in ids_a:  # worker A wakes up with stale claims
+            self.assertIsNone(cs.attempt(note_id, token_a, late))
+        self.assertEqual(len(mail.outbox), 2)  # still exactly one email per notification
+        self.assertEqual(N.objects.filter(attempt_count=1).count(), 2)
+
+    def test_a_running_worker_renews_its_lease_so_no_one_else_can_claim(self):  # C-02
+        # Two notifications. The worker renews the lease of the row it still holds before each
+        # send. A second worker that looks 11 minutes later must find nothing to claim, because
+        # the lease was renewed at t0 + 9 minutes (it would be claimable without the renewal).
+        t0 = ist(2026, 11, 11, 10)
+        ticks = [t0]  # the claim happens at t0; everything after runs at t0 + 9 minutes
+        clock = lambda: ticks.pop() if ticks else t0 + timedelta(minutes=9)  # noqa: E731
+        seen = {}
+
+        def during_first_send(*args, **kwargs):
+            seen["second_worker"] = cs.claim_due(t0 + timedelta(minutes=11), limit=10)[1]
+            return 1
+
+        with (
+            mock.patch.object(cs.timezone, "now", clock),
+            mock.patch.object(
+                cs.EmailMessage,
+                "send",
+                autospec=True,
+                side_effect=lambda *a, **k: during_first_send(),
+            ),
+        ):
+            result = cs.send_due()
+        self.assertEqual(result, {S.SMTP_ACCEPTED: 2})
+        self.assertEqual(seen["second_worker"], [])
+        self.assertEqual(len(mail.outbox), 0)  # the mocked send records nothing; no duplicates
+
+    def test_a_slow_smtp_server_within_the_lease_still_sends_each_email_once(self):  # C-02
+        t0 = ist(2026, 11, 11, 10)
+        self.assertEqual(cs.send_due(t0), {S.SMTP_ACCEPTED: 2})
+        self.assertEqual(cs.send_due(t0 + timedelta(minutes=1)), {})
+        self.assertEqual(len(mail.outbox), 2)
+
     def test_running_the_cycle_again_never_sends_a_second_email(self):
         cs.send_due(ist(2026, 11, 11, 10))
         cs.run_cycle(ist(2026, 11, 11, 10, 1))

@@ -19,7 +19,7 @@
   {% endif %}
   <div class="main">
     <header class="topbar">
-      {% block topbar_title %}{% if not user.is_authenticated %}<strong>{% block heading %}{{ library.library_name }}{% endblock %}</strong>{% endif %}{% endblock %}
+      {% block topbar_title %}{% if user.is_authenticated %}<h1 class="visually-hidden">{% else %}<strong>{% endif %}{% block heading %}{{ library.library_name }}{% endblock %}{% if user.is_authenticated %}</h1>{% else %}</strong>{% endif %}{% endblock %}
       <div>
       {% if user.is_authenticated %}<form method="post" action="{% url 'accounts:logout' %}" style="display:inline">{% csrf_token %}<button type="submit" class="btn-primary-token">Sign out</button></form>{% endif %}
       <button id="theme-toggle" type="button" class="btn-primary-token" aria-label="Toggle light or dark mode">Mode</button>

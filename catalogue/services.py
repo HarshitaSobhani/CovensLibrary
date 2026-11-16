@@ -11,8 +11,6 @@ from core.sequences import next_value
 
 from .models import Acquisition, BookCopy, BookEdition, Category, CopyEvent
 
-UNKNOWN_AUTHOR = "Unknown author"
-
 
 # ---------- ISBN ----------
 def normalise_isbn(raw):
@@ -102,8 +100,8 @@ def create_edition(
     *,
     actor,
     title,
-    category,
-    author="",
+    author,
+    category=None,
     publisher="",
     edition_label="",
     publication_year=None,
@@ -114,6 +112,8 @@ def create_edition(
 ):
     if not (title or "").strip():
         raise RuleViolation("title_required", "Title is required.")
+    if not (author or "").strip():
+        raise RuleViolation("author_required", "Author is required.")
     _check_year(publication_year)
     isbn = clean_isbn(isbn)
     if find_isbn_duplicates(isbn).exists() and not isbn_acknowledged:
@@ -144,6 +144,8 @@ def create_edition(
 @transaction.atomic
 def update_edition(edition, *, actor, isbn_acknowledged=False, **fields):
     _check_year(fields.get("publication_year"))
+    if "author" in fields and not (fields["author"] or "").strip() and edition.author:
+        raise RuleViolation("author_required", "Author is required.")
     if "isbn" in fields:
         fields["isbn"] = clean_isbn(fields["isbn"])
         if (
@@ -340,7 +342,7 @@ def set_copy_state(copy, *, condition, status, actor, note=""):
     return copy
 
 
-def search_editions(query="", archived=False, category=None):
+def search_editions(query="", archived=False, category=None, incomplete=False):
     from django.db.models import Q
 
     qs = BookEdition.objects.filter(is_archived=archived).select_related("category")
@@ -356,4 +358,14 @@ def search_editions(query="", archived=False, category=None):
         ).distinct()
     if category:
         qs = qs.filter(category=category)
+    if incomplete:
+        qs = qs.filter(
+            Q(category__isnull=True)
+            | Q(isbn="")
+            | Q(publisher="")
+            | Q(edition_label="")
+            | Q(publication_year__isnull=True)
+            | Q(description="")
+            | Q(notes="")
+        )
     return qs

@@ -21,15 +21,19 @@ NAV = {"nav_active": "books"}
 def edition_list(request):
     q = clean_query(request.GET.get("q", ""))
     archived = request.GET.get("archived") == "1"
+    incomplete = request.GET.get("incomplete") == "1"
     category_id, ok = int_param(request, "category")
     category = Category.objects.filter(pk=category_id).first() if category_id else None
     if not ok or (category_id and category is None):
         messages.warning(request, "That category filter is not valid and was ignored.")
-    page = Paginator(services.search_editions(q, archived, category), 25).get_page(
+    page = Paginator(services.search_editions(q, archived, category, incomplete), 25).get_page(
         request.GET.get("page")
     )
     qs = querystring(
-        q=q, archived="1" if archived else "", category=category.pk if category else ""
+        q=q,
+        archived="1" if archived else "",
+        incomplete="1" if incomplete else "",
+        category=category.pk if category else "",
     )
     return render(
         request,
@@ -39,6 +43,7 @@ def edition_list(request):
             "qs": qs,
             "q": q,
             "archived": archived,
+            "incomplete": incomplete,
             "category": category,
             "categories": Category.objects.all(),
             **NAV,

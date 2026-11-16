@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block heading %}{{ title }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ title }} - {{ library.library_name }}{% endblock %}{% block heading %}{{ title }}{% endblock %}
 {% block content %}<div class="card-surface" style="max-width:40rem">
 {% if loan %}<p>{{ loan.member.membership_no }} {{ loan.member.full_name }} - {{ loan.copy.copy_code }}, due {{ loan.due_on|date:"d M Y" }}</p>{% endif %}
 <form method="post" novalidate>{% csrf_token %}{% include "partials/form_fields.html" %}

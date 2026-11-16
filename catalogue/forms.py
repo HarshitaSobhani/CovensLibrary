@@ -1,5 +1,6 @@
 from django import forms
 from django.db import transaction
+from django.db.models import Q
 
 from core.errors import RuleViolation
 from core.forms import BootstrapFormMixin
@@ -27,12 +28,28 @@ class EditionForm(BootstrapFormMixin, forms.ModelForm):
             "description",
             "notes",
         ]
-        help_texts = {"author": "Leave blank or enter 'Unknown author'."}
+        help_texts = {
+            "author": "Required.",
+            "category": "Optional. Missing details can be completed later.",
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["category"].queryset = Category.objects.filter(is_active=True)
+        # Active categories, plus this edition's own category even if it was made inactive
+        # later (otherwise the record could no longer be saved).
+        choices = Q(is_active=True)
+        if self.instance.pk and self.instance.category_id:
+            choices |= Q(pk=self.instance.category_id)
+        self.fields["category"].queryset = Category.objects.filter(choices)
+        self.fields["isbn"].label = "ISBN"
         self.show_isbn_ack = False
+        # A legacy record that already has no author stays editable; everything else needs one.
+        self.fields["author"].required = not self.instance.pk or bool(self.instance.author)
+        self.fields["author"].error_messages["required"] = "Author is required."
+        self.fields["title"].error_messages["required"] = "Title is required."
+
+    def clean_author(self):
+        return (self.cleaned_data.get("author") or "").strip()
 
     def clean(self):
         data = super().clean()

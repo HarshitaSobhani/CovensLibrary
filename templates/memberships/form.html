@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block heading %}{{ title }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ title }} - {{ library.library_name }}{% endblock %}{% block heading %}{{ title }}{% endblock %}
 {% block content %}<div class="card-surface" style="max-width:40rem">
 {% for code, text in blockers %}<div class="text-danger mb-2" role="alert">{{ text }}</div>{% endfor %}
 <p class="text-muted-token small">Amounts are in rupees. The full amount must be paid before anything is activated or recorded.{% if register %} Registration needs the subscription fee <strong>and</strong> the refundable ₹500 token.{% endif %}</p>

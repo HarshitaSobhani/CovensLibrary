@@ -8,6 +8,7 @@ token record, and concurrent double submissions cannot create duplicates.
 import uuid
 from dataclasses import dataclass
 
+from django.apps import apps
 from django.db import transaction
 from django.utils import timezone
 
@@ -394,6 +395,15 @@ def cancel_subscription(*, actor, subscription, reason, today=None):
     reason = clean_reason(reason, "A reason to cancel a subscription", required=True)
     if sub.cancelled_at:
         raise RuleViolation("already_cancelled", "This subscription is already cancelled.")
+    # O-06: a book out must keep its valid membership. Checked under the member lock, so a loan
+    # issued concurrently either commits first (and blocks this) or waits for the cancellation.
+    loan_model = apps.get_model("circulation", "Loan")
+    if loan_model.objects.filter(member=member, status="active").exists():
+        raise RuleViolation(
+            "loan_outstanding",
+            "A book is still out on this member's loan. Return it first; the subscription "
+            "cannot be cancelled while a loan is outstanding.",
+        )
     sub.cancelled_at = timezone.now()
     sub.cancel_reason = reason
     sub.save(update_fields=["cancelled_at", "cancel_reason"])

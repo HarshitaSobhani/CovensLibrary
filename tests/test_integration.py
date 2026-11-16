@@ -21,7 +21,7 @@ def workbook_bytes():
     ws = wb.active
     ws.title = "Books"
     ws.append(["Title", "Author", "ISBN", "Category", "Copies"])
-    ws.append(["Imported One", "", "9780261102217", "Fiction", 2])
+    ws.append(["Imported One", "Some Author", "9780261102217", "Fiction", 2])
     ws.append(["Imported Two", "Unknown author", "", "Poetry", 1])
     buf = io.BytesIO()
     wb.save(buf)
@@ -48,7 +48,7 @@ class EndToEndOwnerFlowTests(TestCase):
         cat = Category.objects.get(name="Fiction")
         r = c.post(
             reverse("catalogue:edition_create"),
-            {"title": "Manual Entry", "category": cat.pk, "author": ""},
+            {"title": "Manual Entry", "category": cat.pk, "author": "Some Author"},
         )
         edition = BookEdition.objects.get(title="Manual Entry")
         self.assertRedirects(r, reverse("catalogue:edition_detail", args=[edition.pk]))
@@ -78,15 +78,15 @@ class EndToEndOwnerFlowTests(TestCase):
             {"file": SimpleUploadedFile("b.xlsx", workbook_bytes())},
         )
         batch_url = r["Location"]
-        c.post(
-            batch_url,
-            {
-                "copy_id_mode": "generate",
-                "create_missing_categories": "on",
-                "isbn_warnings_acknowledged": "on",
-                "confirm": "1",
-            },
-        )
+        options = {
+            "copy_id_mode": "generate",
+            "create_missing_categories": "on",
+            "isbn_warnings_acknowledged": "on",
+        }
+        c.post(batch_url, {**options, "refresh": "1"})  # change options: preview regenerated
+        self.assertEqual(BookEdition.objects.count(), 1)  # nothing imported yet
+        token = c.get(batch_url).context["preview_token"]
+        c.post(batch_url, {**options, "confirm": "1", "preview_token": token})
         self.assertEqual(BookEdition.objects.count(), 3)
         self.assertTrue(Category.objects.filter(name="Poetry").exists())
         codes = list(BookCopy.objects.values_list("copy_code", flat=True))

@@ -1,3 +1,3 @@
-{% extends "base.html" %}{% block heading %}Label layouts{% endblock %}
+{% extends "base.html" %}{% block title %}Label layouts - {{ library.library_name }}{% endblock %}{% block heading %}Label layouts{% endblock %}
 {% block content %}<div class="card-surface" style="max-width:40rem"><ul>{% for l in layouts %}<li>{{ l.name }} — {{ l.columns }}×{{ l.rows }} labels of {{ l.label_width_mm }}×{{ l.label_height_mm }} mm{% if l.is_default %} (default){% else %} <form method="post" action="{% url 'catalogue:layout_set_default' l.pk %}" style="display:inline">{% csrf_token %}<button class="btn-primary-token" type="submit">Make default</button></form>{% endif %}</li>{% empty %}<li class="text-muted-token">No layouts yet; a default A4 layout is used.</li>{% endfor %}</ul>
 <form method="post" novalidate>{% csrf_token %}{% include "partials/form_fields.html" %}<button class="btn-primary-token" type="submit">Save layout</button></form></div>{% endblock %}

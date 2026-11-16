@@ -503,7 +503,9 @@ def borrowing_stats(start, end, today):
     late = sum(1 for ln in returned if ln.returned_on > ln.due_on)
     rate = Fraction(late * 100, len(returned)) if returned else Fraction(0)
     titles = Counter(ln.copy.edition.title for ln in loans).most_common(10)
-    categories = Counter(ln.copy.edition.category.name for ln in loans).most_common(10)
+    categories = Counter(
+        ln.copy.edition.category.name if ln.copy.edition.category else "No category" for ln in loans
+    ).most_common(10)
     return Report(
         "borrowing",
         "Borrowing statistics",

@@ -10,6 +10,7 @@ from django.utils import timezone
 from audit.models import AuditEvent
 from circulation import forfeiture, services
 from circulation.models import Loan
+from core.errors import RuleViolation
 from core.models import DomainEvent, LibrarySetting
 from finance import corrections as fc
 from finance import tokens
@@ -143,17 +144,29 @@ class DayEightTests(Base):
         self.assertEqual(self.job(D(2027, 2, 8))["forfeited"], 1)  # 30 Jan + 7 + 1
 
     def test_no_held_token_means_nothing_to_forfeit(self):
-        original = FinancialTransaction.objects.get(kind="token_collection")
-        fc.reverse_transaction(
+        # O-07: a token collection cannot be reversed while a book is out, so the "no token
+        # held" state is reached another way: the token is already forfeited (owner-confirmed)
+        # while the loan is still active. The day-8 job must then skip the loan.
+        fc.forfeit_token(
             actor=self.owner,
-            transaction_id=original.pk,
-            reason="mistake",
-            entries=[Entry("cash", 50000)],
+            member=self.member,
+            trigger="lost",
+            owner_confirmed=True,
+            reason="test: token already forfeited",
             today=D(2026, 12, 2),
         )
+        with self.assertRaises(RuleViolation) as ctx:
+            fc.reverse_transaction(
+                actor=self.owner,
+                transaction_id=FinancialTransaction.objects.get(kind="token_collection").pk,
+                reason="mistake",
+                entries=[Entry("cash", 50000)],
+                today=D(2026, 12, 2),
+            )
+        self.assertEqual(ctx.exception.code, "token_in_use")  # already forfeited: blocked first
         result = self.job(DAY8)
         self.assertEqual((result["forfeited"], result["skipped_token"]), (0, 1))
-        self.assertFalse(FinancialTransaction.objects.filter(kind="token_forfeiture").exists())
+        self.assertEqual(FinancialTransaction.objects.filter(kind="token_forfeiture").count(), 1)
 
     def test_a_loan_already_forfeited_manually_is_not_forfeited_twice(self):
         services.mark_lost(

@@ -391,6 +391,12 @@ def attempt(note_id, token, now):
                 _skip(note, Notification.SkipCode.NO_EMAIL, "no email address", now)
         return Notification.Status.SKIPPED
     recipient = (member.email or "").strip()
+    # Last check before talking to the mail server: the claim must still be ours and its lease
+    # must still run. A lapsed lease means another worker may now own the row: do not send.
+    if not Notification.objects.filter(
+        pk=note_id, claim_token=token, claimed_until__gt=now
+    ).exists():
+        return None
     error = ""
     try:
         sent = EmailMessage(
@@ -436,12 +442,29 @@ def attempt(note_id, token, now):
     return note.status
 
 
+def _renew_leases(ids, token, now):
+    """Extend the lease of every row this run still holds (only rows still carrying our token)."""
+    Notification.objects.filter(id__in=ids, claim_token=token).update(
+        claimed_until=now + LEASE, updated_at=now
+    )
+
+
 def send_due(now=None, limit=50):
-    now = now or timezone.now()
-    token, ids = claim_due(now, limit)
+    """Claim, then send one by one. The lease of the rows still waiting is renewed before each
+    send, so a slow run never lets another worker claim them. A row whose lease has lapsed is
+    never sent by this run (``attempt`` checks it right before SMTP), so two workers cannot send
+    the same notification.
+
+    ``now`` fixes the clock (tests); when omitted the real clock is read before every send."""
+
+    def clock():
+        return now or timezone.now()
+
+    token, ids = claim_due(clock(), limit)
     result = {}
-    for note_id in ids:
-        status = attempt(note_id, token, now)
+    for index, note_id in enumerate(ids):
+        _renew_leases(ids[index:], token, clock())
+        status = attempt(note_id, token, clock())
         result[status] = result.get(status, 0) + 1
     return result
 

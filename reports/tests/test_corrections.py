@@ -201,7 +201,10 @@ class MaskingTests(TestCase):
         )  # fmt: skip
         # donor
         edition = catalogue.create_edition(
-            actor=self.owner, title="Donated Book", category=Category.objects.first()
+            author="Test Author",
+            actor=self.owner,
+            title="Donated Book",
+            category=Category.objects.first(),
         )
         catalogue.add_copies(
             edition,
