@@ -51,3 +51,20 @@ class PageHeadingTests(TestCase):
         self.client.logout()
         html = self.client.get(reverse("accounts:password_reset")).content.decode()
         self.assertIn("<strong>Reset password</strong>", html)
+
+
+class BrowserIconTests(TestCase):
+    def test_pages_declare_the_c_icon_and_the_files_exist(self):
+        from pathlib import Path
+
+        self.client.force_login(
+            get_user_model().objects.create_user("icon", password="pw-Strong-123!")
+        )
+        html = self.client.get(reverse("core:dashboard")).content.decode()
+        self.assertIn('rel="icon" href="/static/favicon.svg"', html)
+        self.assertIn('rel="alternate icon" href="/static/favicon.png"', html)
+        static = Path(__file__).resolve().parent.parent / "static"
+        self.assertTrue((static / "favicon.svg").is_file())
+        self.assertTrue((static / "favicon.png").is_file())
+        ico = Path(__file__).resolve().parent.parent / "deploy" / "windows" / "coven-c.ico"
+        self.assertEqual(ico.read_bytes()[:4], b"\x00\x00\x01\x00")  # a real .ico header

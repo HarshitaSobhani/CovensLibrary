@@ -22,6 +22,7 @@ foreach ($item in $items) {
     $link.Arguments = "//B //Nologo `"$vbs`" $($item.Script)"
     $link.WorkingDirectory = $AppRoot
     $link.Description = $item.Text
+    $link.IconLocation = (Join-Path $PSScriptRoot "coven-c.ico") + ",0"
     $link.WindowStyle = 7
     $link.Save()
 }
