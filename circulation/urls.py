@@ -6,6 +6,7 @@ app_name = "circulation"
 urlpatterns = [
     path("", views.loan_list, name="list"),
     path("issue/", views.loan_issue, name="issue"),
+    path("issue/copies/", views.copy_search, name="copy_search"),
     path("decisions/", views.decisions, name="decisions"),
     path("decisions/<int:pk>/<str:action>/", views.decision_resolve, name="decision_resolve"),
     path("grace/", views.grace_settings, name="grace"),

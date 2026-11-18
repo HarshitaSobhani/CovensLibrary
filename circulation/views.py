@@ -1,10 +1,14 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db.models import Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
+from catalogue.models import BookCopy
 from core.errors import RuleViolation
+from core.http import clean_query
 from core.models import LibrarySetting
 from memberships import policy
 
@@ -252,3 +256,37 @@ def decision_resolve(request, pk, action):
     except RuleViolation as exc:
         messages.error(request, exc.message)
     return redirect("circulation:decisions")
+
+
+COPY_SEARCH_MIN = 3
+
+
+@login_required
+def copy_search(request):
+    """Copies whose title, copy ID or barcode contains the text typed (at least 3 characters).
+    Read only; archived books are left out. Used by the Issue form's suggestions."""
+    query = clean_query(request.GET.get("q", ""), limit=80).strip()
+    if len(query) < COPY_SEARCH_MIN:
+        return JsonResponse({"results": [], "min_length": COPY_SEARCH_MIN})
+    copies = (
+        BookCopy.objects.select_related("edition")
+        .filter(edition__is_archived=False)
+        .filter(
+            Q(edition__title__icontains=query)
+            | Q(copy_code__icontains=query)
+            | Q(barcode__icontains=query)
+        )
+        .order_by("edition__title", "copy_code")[:20]
+    )
+    results = [
+        {
+            "copy_code": copy.copy_code,
+            "title": copy.edition.title,
+            "author": copy.edition.author,
+            "condition": copy.get_condition_display(),
+            "status": copy.get_status_display(),
+            "issuable": copy.is_issuable,
+        }
+        for copy in copies
+    ]
+    return JsonResponse({"results": results, "min_length": COPY_SEARCH_MIN})

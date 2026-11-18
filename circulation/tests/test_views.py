@@ -180,3 +180,59 @@ class OutcomeAndGraceViewTests(TestCase):
             r = self.client.get(reverse(name, args=args))
             self.assertEqual(r.status_code, 302, name)
             self.assertIn("/accounts/login/", r["Location"])
+
+
+class IssueFormSelectionTests(TestCase):
+    """Member is a drop-down; copies are found by typing at least three characters."""
+
+    def setUp(self):
+
+        from circulation.tests.helpers import make_copies, make_owner, member_at
+
+        self.owner = make_owner()
+        self.member = member_at(self.owner, name="Asha Rao", number="9876543210")
+        self.other = member_at(self.owner, name="Ravi Kumar", number="9876500001")
+        self.copies = make_copies(self.owner, 2, title="The Night Circus")
+        self.client.force_login(self.owner)
+
+    def test_member_is_a_drop_down_of_members_by_membership_number(self):
+        page = self.client.get(reverse("circulation:issue")).content.decode()
+        self.assertIn('<select name="member_no"', page)
+        self.assertIn(self.member.membership_no, page)
+        self.assertIn("Asha Rao", page)
+        self.assertIn("Ravi Kumar", page)
+
+    def test_anonymised_members_are_not_offered(self):
+        from members.services import anonymise_member
+
+        anonymise_member(self.other, actor=self.owner, reason="Requested", confirm=True)
+        page = self.client.get(reverse("circulation:issue")).content.decode()
+        self.assertNotIn("Ravi Kumar", page)
+
+    def test_copy_search_needs_three_characters(self):
+        url = reverse("circulation:copy_search")
+        self.assertEqual(self.client.get(url, {"q": "Ni"}).json()["results"], [])
+        self.assertEqual(self.client.get(url, {"q": ""}).json()["results"], [])
+
+    def test_copy_search_finds_copies_by_title_or_copy_id(self):
+        url = reverse("circulation:copy_search")
+        by_title = self.client.get(url, {"q": "night"}).json()["results"]
+        self.assertEqual(len(by_title), 2)
+        self.assertEqual(by_title[0]["title"], "The Night Circus")
+        self.assertTrue(by_title[0]["issuable"])
+        by_code = self.client.get(url, {"q": self.copies[0].copy_code[:8]}).json()["results"]
+        self.assertTrue(any(r["copy_code"] == self.copies[0].copy_code for r in by_code))
+        self.assertEqual(self.client.get(url, {"q": "zzzzzz"}).json()["results"], [])
+
+    def test_copy_search_requires_login_and_is_read_only(self):
+        self.client.logout()
+        response = self.client.get(reverse("circulation:copy_search"), {"q": "night"})
+        self.assertEqual(response.status_code, 302)
+
+    def test_issue_works_with_a_chosen_member_and_copy(self):
+        r = self.client.post(
+            reverse("circulation:issue"),
+            {"member_no": self.member.membership_no, "copy_code": self.copies[0].copy_code},
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(Loan.objects.filter(member=self.member, copy=self.copies[0]).exists())

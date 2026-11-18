@@ -1,4 +1,5 @@
 from django import forms
+from django.urls import reverse
 
 from catalogue.models import BookCopy
 from core.forms import BootstrapFormMixin
@@ -24,8 +25,20 @@ class BackdatingFields(forms.Form):
 
 
 class IssueForm(BootstrapFormMixin, BackdatingFields):
-    member_no = forms.CharField(label="Member ID (COV-M-000001)", max_length=20)
-    copy_code = forms.CharField(label="Copy ID or barcode (COV-C-000001)", max_length=40)
+    # A drop-down of members (never anonymised ones). The value is the membership number.
+    member_no = forms.ModelChoiceField(
+        queryset=Member.objects.none(),
+        to_field_name="membership_no",
+        label="Member",
+        error_messages={"invalid_choice": "No member has this ID."},
+    )
+    copy_code = forms.CharField(
+        label="Copy: type at least 3 letters of the title, or the copy ID or barcode",
+        max_length=40,
+        widget=forms.TextInput(
+            attrs={"autocomplete": "off", "placeholder": "e.g. Hobbit or COV-C-000001"}
+        ),
+    )
     issued_on = forms.DateField(
         required=False,
         widget=forms.DateInput(attrs={"type": "date"}),
@@ -38,13 +51,21 @@ class IssueForm(BootstrapFormMixin, BackdatingFields):
     )
     notes = _reason("Notes")
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        members = Member.objects.filter(anonymised_at__isnull=True).order_by("membership_no")
+        self.fields["member_no"].queryset = members
+        self.fields["member_no"].label_from_instance = lambda m: (
+            f"{m.membership_no} — {m.full_name}"
+        )
+        self.fields["copy_code"].widget.attrs["data-copy-search"] = reverse(
+            "circulation:copy_search"
+        )
+
     def clean_member_no(self):
-        value = self.cleaned_data["member_no"].strip()
-        member = Member.objects.filter(membership_no__iexact=value).first()
-        if member is None:
-            raise forms.ValidationError("No member has this ID.")
+        member = self.cleaned_data["member_no"]
         self.member = member
-        return value
+        return member.membership_no
 
     def clean_copy_code(self):
         value = self.cleaned_data["copy_code"].strip()
